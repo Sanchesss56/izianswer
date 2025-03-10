@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Мультиплеерная игра</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -11,14 +12,29 @@
             overflow: hidden;
             background-color: #333;
             font-family: Arial, sans-serif;
+            color: white;
         }
         #gameCanvas {
             display: block;
             background-color: #222;
             margin: 20px auto;
         }
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+        .hidden {
+            display: none;
+        }
         .controls {
-            color: white;
             text-align: center;
             margin: 10px;
         }
@@ -26,6 +42,7 @@
             display: flex;
             justify-content: space-around;
             margin-bottom: 20px;
+            width: 800px;
         }
         .player {
             padding: 10px;
@@ -57,64 +74,151 @@
             background-color: blue;
             width: 100%;
         }
-        .game-over {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            display: none;
-        }
         button {
             padding: 10px 20px;
-            margin-top: 10px;
+            margin: 10px;
             background-color: #4CAF50;
             color: white;
             border: none;
             border-radius: 5px;
             cursor: pointer;
+            font-size: 16px;
         }
         button:hover {
             background-color: #45a049;
         }
+        input {
+            padding: 10px;
+            margin: 10px;
+            border-radius: 5px;
+            border: none;
+            width: 250px;
+            font-size: 16px;
+        }
+        .connection-info {
+            margin: 20px;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            text-align: center;
+        }
+        #connectionId {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 3px;
+            margin-top: 10px;
+            display: inline-block;
+        }
+        .waiting {
+            background-color: #FFA500;
+        }
+        .connected {
+            background-color: #4CAF50;
+        }
+        .error {
+            background-color: #FF0000;
+        }
     </style>
 </head>
 <body>
-    <div class="controls">
-        <h1>Мультиплеерная игра</h1>
-        <div class="player-info">
-            <div class="player" id="player1-info">
-                <strong>Игрок 1 (Красный)</strong>
-                <p>Управление: W, A, S, D<br>Стрельба: Space</p>
-                <div class="health-bar">
-                    <div class="health" id="health1"></div>
+    <!-- Игровое поле -->
+    <div id="gameScreen" class="hidden">
+        <div class="controls">
+            <h1>Мультиплеерная игра</h1>
+            <div class="player-info">
+                <div class="player" id="player1-info">
+                    <strong>Игрок 1 (Красный)</strong>
+                    <p>Управление: W, A, S, D<br>Стрельба: Space</p>
+                    <div class="health-bar">
+                        <div class="health" id="health1"></div>
+                    </div>
                 </div>
-            </div>
-            <div class="player" id="player2-info">
-                <strong>Игрок 2 (Синий)</strong>
-                <p>Управление: Стрелки<br>Стрельба: Enter</p>
-                <div class="health-bar">
-                    <div class="health" id="health2"></div>
+                <div class="player" id="player2-info">
+                    <strong>Игрок 2 (Синий)</strong>
+                    <p>Управление: Стрелки<br>Стрельба: Enter</p>
+                    <div class="health-bar">
+                        <div class="health" id="health2"></div>
+                    </div>
                 </div>
             </div>
         </div>
+        
+        <canvas id="gameCanvas" width="800" height="500"></canvas>
     </div>
-    
-    <canvas id="gameCanvas" width="800" height="500"></canvas>
-    
-    <div class="game-over" id="gameOver">
+
+    <!-- Начальный экран -->
+    <div id="startScreen" class="screen">
+        <h1>Мультиплеерная игра</h1>
+        <p>Выберите режим игры:</p>
+        <button id="localBtn">Локальная игра (на одном компьютере)</button>
+        <button id="createGameBtn">Создать онлайн игру</button>
+        <button id="joinGameBtn">Присоединиться к игре</button>
+    </div>
+
+    <!-- Экран создания игры -->
+    <div id="createGameScreen" class="screen hidden">
+        <h1>Создание онлайн игры</h1>
+        <div class="connection-info">
+            <p>Ваш ID для подключения:</p>
+            <p id="connectionId">Генерация ID...</p>
+            <div id="connectionStatus" class="status waiting">Ожидание подключения игрока...</div>
+        </div>
+        <button id="backFromCreateBtn">Назад</button>
+    </div>
+
+    <!-- Экран подключения к игре -->
+    <div id="joinGameScreen" class="screen hidden">
+        <h1>Подключение к игре</h1>
+        <p>Введите ID игры, к которой хотите подключиться:</p>
+        <input type="text" id="gameIdInput" placeholder="Введите ID игры">
+        <button id="connectBtn">Подключиться</button>
+        <div id="joinStatus" class="status hidden"></div>
+        <button id="backFromJoinBtn">Назад</button>
+    </div>
+
+    <!-- Экран конца игры -->
+    <div id="gameOverScreen" class="screen hidden">
+        <h1>Игра окончена</h1>
         <h2 id="winner">Игрок X победил!</h2>
         <button id="restartBtn">Начать заново</button>
+        <button id="mainMenuBtn">Главное меню</button>
     </div>
 
     <script>
+        // Элементы DOM
+        const startScreen = document.getElementById('startScreen');
+        const createGameScreen = document.getElementById('createGameScreen');
+        const joinGameScreen = document.getElementById('joinGameScreen');
+        const gameScreen = document.getElementById('gameScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const connectionId = document.getElementById('connectionId');
+        const gameIdInput = document.getElementById('gameIdInput');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const joinStatus = document.getElementById('joinStatus');
+
+        // Кнопки
+        const localBtn = document.getElementById('localBtn');
+        const createGameBtn = document.getElementById('createGameBtn');
+        const joinGameBtn = document.getElementById('joinGameBtn');
+        const connectBtn = document.getElementById('connectBtn');
+        const backFromCreateBtn = document.getElementById('backFromCreateBtn');
+        const backFromJoinBtn = document.getElementById('backFromJoinBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        const mainMenuBtn = document.getElementById('mainMenuBtn');
+
         // Получаем элемент canvas и его контекст
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+
+        // Параметры игры
+        let gameMode = ''; // 'local', 'host', 'client'
+        let isGameRunning = false;
+        let peer = null;
+        let conn = null;
+        let isMyTurn = false; // Для синхронизации хода
 
         // Здоровье игроков
         let player1Health = 100;
@@ -162,10 +266,211 @@
             keys[e.key] = false;
         });
 
-        // Перезапуск игры
-        document.getElementById('restartBtn').addEventListener('click', function() {
+        // Обработчики кнопок
+        localBtn.addEventListener('click', startLocalGame);
+        createGameBtn.addEventListener('click', showCreateGameScreen);
+        joinGameBtn.addEventListener('click', showJoinGameScreen);
+        connectBtn.addEventListener('click', joinGame);
+        backFromCreateBtn.addEventListener('click', backToMainMenu);
+        backFromJoinBtn.addEventListener('click', backToMainMenu);
+        restartBtn.addEventListener('click', restartGame);
+        mainMenuBtn.addEventListener('click', backToMainMenu);
+
+        // Функции управления экранами
+        function showScreen(screen) {
+            startScreen.classList.add('hidden');
+            createGameScreen.classList.add('hidden');
+            joinGameScreen.classList.add('hidden');
+            gameScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            
+            screen.classList.remove('hidden');
+        }
+
+        function startLocalGame() {
+            gameMode = 'local';
+            showScreen(gameScreen);
             resetGame();
-        });
+        }
+
+        function showCreateGameScreen() {
+            showScreen(createGameScreen);
+            initPeer();
+        }
+
+        function showJoinGameScreen() {
+            showScreen(joinGameScreen);
+            joinStatus.classList.add('hidden');
+        }
+
+        function backToMainMenu() {
+            if (peer) {
+                peer.destroy();
+                peer = null;
+            }
+            if (conn) {
+                conn.close();
+                conn = null;
+            }
+            
+            isGameRunning = false;
+            showScreen(startScreen);
+        }
+
+        // Инициализация P2P соединения
+        function initPeer() {
+            // Генерируем случайный ID
+            const peerId = 'game-' + Math.floor(Math.random() * 10000);
+            
+            peer = new Peer(peerId);
+            
+            peer.on('open', (id) => {
+                connectionId.textContent = id;
+            });
+            
+            peer.on('connection', (connection) => {
+                conn = connection;
+                
+                conn.on('open', () => {
+                    connectionStatus.textContent = 'Игрок подключился!';
+                    connectionStatus.classList.remove('waiting');
+                    connectionStatus.classList.add('connected');
+                    
+                    setTimeout(() => {
+                        gameMode = 'host';
+                        isMyTurn = true; // Хост начинает первым
+                        showScreen(gameScreen);
+                        resetGame();
+                        
+                        // Отправляем начальное состояние
+                        sendGameState();
+                    }, 1000);
+                });
+                
+                setupConnectionHandlers();
+            });
+            
+            peer.on('error', (err) => {
+                console.error(err);
+                connectionStatus.textContent = 'Ошибка: ' + err.message;
+                connectionStatus.classList.remove('waiting');
+                connectionStatus.classList.add('error');
+            });
+        }
+
+        function joinGame() {
+            const gameId = gameIdInput.value.trim();
+            
+            if (!gameId) {
+                joinStatus.textContent = 'Введите ID игры';
+                joinStatus.classList.remove('hidden');
+                joinStatus.classList.add('error');
+                return;
+            }
+            
+            joinStatus.textContent = 'Подключение...';
+            joinStatus.classList.remove('hidden', 'error');
+            joinStatus.classList.add('waiting');
+            
+            peer = new Peer();
+            
+            peer.on('open', () => {
+                conn = peer.connect(gameId);
+                
+                conn.on('open', () => {
+                    joinStatus.textContent = 'Успешное подключение!';
+                    joinStatus.classList.remove('waiting', 'error');
+                    joinStatus.classList.add('connected');
+                    
+                    setupConnectionHandlers();
+                    
+                    setTimeout(() => {
+                        gameMode = 'client';
+                        isMyTurn = false; // Клиент ждет хода хоста
+                        showScreen(gameScreen);
+                        resetGame();
+                    }, 1000);
+                });
+                
+                conn.on('error', (err) => {
+                    console.error(err);
+                    joinStatus.textContent = 'Ошибка подключения: ' + err.message;
+                    joinStatus.classList.remove('waiting');
+                    joinStatus.classList.add('error');
+                });
+            });
+            
+            peer.on('error', (err) => {
+                console.error(err);
+                joinStatus.textContent = 'Ошибка: ' + err.message;
+                joinStatus.classList.remove('waiting');
+                joinStatus.classList.add('error');
+            });
+        }
+
+        function setupConnectionHandlers() {
+            conn.on('data', (data) => {
+                if (data.type === 'gameState') {
+                    // Обновляем состояние игры
+                    player1.x = data.player1.x;
+                    player1.y = data.player1.y;
+                    player1.bullets = data.player1.bullets;
+                    
+                    player2.x = data.player2.x;
+                    player2.y = data.player2.y;
+                    player2.bullets = data.player2.bullets;
+                    
+                    player1Health = data.player1Health;
+                    player2Health = data.player2Health;
+                    
+                    updateHealthBars();
+                    isMyTurn = true; // Теперь мой ход
+                } else if (data.type === 'gameOver') {
+                    endGame(data.winner);
+                } else if (data.type === 'restart') {
+                    resetGame();
+                }
+            });
+            
+            conn.on('close', () => {
+                if (isGameRunning) {
+                    endGame(gameMode === 'host' ? 1 : 2, 'Противник отключился');
+                }
+            });
+        }
+
+        function sendGameState() {
+            if (conn && conn.open) {
+                conn.send({
+                    type: 'gameState',
+                    player1: {
+                        x: player1.x,
+                        y: player1.y,
+                        bullets: player1.bullets
+                    },
+                    player2: {
+                        x: player2.x,
+                        y: player2.y,
+                        bullets: player2.bullets
+                    },
+                    player1Health: player1Health,
+                    player2Health: player2Health
+                });
+                
+                isMyTurn = false; // Теперь ход другого игрока
+            }
+        }
+
+        // Перезапуск игры
+        function restartGame() {
+            resetGame();
+            
+            if (gameMode !== 'local' && conn && conn.open) {
+                conn.send({
+                    type: 'restart'
+                });
+            }
+        }
 
         function resetGame() {
             player1Health = 100;
@@ -180,9 +485,9 @@
             player2.bullets = [];
             
             updateHealthBars();
-            document.getElementById('gameOver').style.display = 'none';
+            showScreen(gameScreen);
             
-            // Восстанавливаем игровой цикл
+            // Запускаем игровой цикл
             if (!isGameRunning) {
                 isGameRunning = true;
                 gameLoop();
@@ -195,50 +500,93 @@
             document.getElementById('health2').style.width = player2Health + '%';
         }
 
-        // Управление игроком 1
+        // Управление игроками
         function movePlayer1() {
-            if (keys['w'] || keys['W']) player1.y -= player1.speed;
-            if (keys['s'] || keys['S']) player1.y += player1.speed;
-            if (keys['a'] || keys['A']) player1.x -= player1.speed;
-            if (keys['d'] || keys['D']) player1.x += player1.speed;
+            if (gameMode === 'local' || (gameMode === 'host' && isMyTurn) || (gameMode === 'client' && !isMyTurn)) {
+                let moved = false;
+                
+                if (keys['w'] || keys['W']) {
+                    player1.y -= player1.speed;
+                    moved = true;
+                }
+                if (keys['s'] || keys['S']) {
+                    player1.y += player1.speed;
+                    moved = true;
+                }
+                if (keys['a'] || keys['A']) {
+                    player1.x -= player1.speed;
+                    moved = true;
+                }
+                if (keys['d'] || keys['D']) {
+                    player1.x += player1.speed;
+                    moved = true;
+                }
 
-            // Стрельба
-            if ((keys[' '] || keys['Spacebar']) && Date.now() - player1.lastShot > player1.cooldown) {
-                player1.bullets.push({
-                    x: player1.x + player1.width,
-                    y: player1.y + player1.height / 2,
-                    radius: bulletSize / 2,
-                    color: player1.color
-                });
-                player1.lastShot = Date.now();
+                // Стрельба
+                if ((keys[' '] || keys['Spacebar']) && Date.now() - player1.lastShot > player1.cooldown) {
+                    player1.bullets.push({
+                        x: player1.x + player1.width,
+                        y: player1.y + player1.height / 2,
+                        radius: bulletSize / 2,
+                        color: player1.color
+                    });
+                    player1.lastShot = Date.now();
+                    moved = true;
+                }
+
+                // Ограничение движения в пределах холста
+                player1.x = Math.max(0, Math.min(canvas.width - player1.width, player1.x));
+                player1.y = Math.max(0, Math.min(canvas.height - player1.height, player1.y));
+                
+                // Отправляем состояние игры, если что-то изменилось
+                if (moved && gameMode !== 'local' && isMyTurn) {
+                    sendGameState();
+                }
             }
-
-            // Ограничение движения в пределах холста
-            player1.x = Math.max(0, Math.min(canvas.width - player1.width, player1.x));
-            player1.y = Math.max(0, Math.min(canvas.height - player1.height, player1.y));
         }
 
-        // Управление игроком 2
         function movePlayer2() {
-            if (keys['ArrowUp']) player2.y -= player2.speed;
-            if (keys['ArrowDown']) player2.y += player2.speed;
-            if (keys['ArrowLeft']) player2.x -= player2.speed;
-            if (keys['ArrowRight']) player2.x += player2.speed;
+            if (gameMode === 'local' || (gameMode === 'client' && isMyTurn) || (gameMode === 'host' && !isMyTurn)) {
+                let moved = false;
+                
+                if (keys['ArrowUp']) {
+                    player2.y -= player2.speed;
+                    moved = true;
+                }
+                if (keys['ArrowDown']) {
+                    player2.y += player2.speed;
+                    moved = true;
+                }
+                if (keys['ArrowLeft']) {
+                    player2.x -= player2.speed;
+                    moved = true;
+                }
+                if (keys['ArrowRight']) {
+                    player2.x += player2.speed;
+                    moved = true;
+                }
 
-            // Стрельба
-            if (keys['Enter'] && Date.now() - player2.lastShot > player2.cooldown) {
-                player2.bullets.push({
-                    x: player2.x,
-                    y: player2.y + player2.height / 2,
-                    radius: bulletSize / 2,
-                    color: player2.color
-                });
-                player2.lastShot = Date.now();
+                // Стрельба
+                if (keys['Enter'] && Date.now() - player2.lastShot > player2.cooldown) {
+                    player2.bullets.push({
+                        x: player2.x,
+                        y: player2.y + player2.height / 2,
+                        radius: bulletSize / 2,
+                        color: player2.color
+                    });
+                    player2.lastShot = Date.now();
+                    moved = true;
+                }
+
+                // Ограничение движения в пределах холста
+                player2.x = Math.max(0, Math.min(canvas.width - player2.width, player2.x));
+                player2.y = Math.max(0, Math.min(canvas.height - player2.height, player2.y));
+                
+                // Отправляем состояние игры, если что-то изменилось
+                if (moved && gameMode !== 'local' && isMyTurn) {
+                    sendGameState();
+                }
             }
-
-            // Ограничение движения в пределах холста
-            player2.x = Math.max(0, Math.min(canvas.width - player2.width, player2.x));
-            player2.y = Math.max(0, Math.min(canvas.height - player2.height, player2.y));
         }
 
         // Обновление положения пуль
@@ -294,13 +642,29 @@
                     player2.bullets.splice(i, 1);
                 }
             }
+            
+            // Если игра по сети и мой ход, отправляем обновление
+            if (gameMode !== 'local' && isMyTurn && (player1.bullets.length > 0 || player2.bullets.length > 0)) {
+                sendGameState();
+            }
         }
 
         // Завершение игры
-        function endGame(winner) {
-            document.getElementById('winner').textContent = `Игрок ${winner} победил!`;
-            document.getElementById('gameOver').style.display = 'block';
+        function endGame(winner, reason = '') {
             isGameRunning = false;
+            
+            const winnerText = document.getElementById('winner');
+            winnerText.textContent = reason || `Игрок ${winner} победил!`;
+            
+            showScreen(gameOverScreen);
+            
+            if (gameMode !== 'local' && conn && conn.open) {
+                conn.send({
+                    type: 'gameOver',
+                    winner: winner,
+                    reason: reason
+                });
+            }
         }
 
         // Отрисовка всех элементов
@@ -334,7 +698,6 @@
         }
 
         // Игровой цикл
-        let isGameRunning = true;
         function gameLoop() {
             if (!isGameRunning) return;
             
@@ -345,9 +708,6 @@
             
             requestAnimationFrame(gameLoop);
         }
-
-        // Запуск игры
-        resetGame();
     </script>
 </body>
 </html>
