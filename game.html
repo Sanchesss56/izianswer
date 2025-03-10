@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мультиплеерная игра</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #333;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            display: block;
+            background-color: #222;
+            margin: 20px auto;
+        }
+        .controls {
+            color: white;
+            text-align: center;
+            margin: 10px;
+        }
+        .player-info {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+        }
+        .player {
+            padding: 10px;
+            border-radius: 5px;
+            width: 200px;
+        }
+        #player1-info {
+            background-color: rgba(255, 0, 0, 0.3);
+        }
+        #player2-info {
+            background-color: rgba(0, 0, 255, 0.3);
+        }
+        .health-bar {
+            height: 20px;
+            background-color: #555;
+            margin-top: 5px;
+            border-radius: 3px;
+        }
+        .health {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        #health1 {
+            background-color: red;
+            width: 100%;
+        }
+        #health2 {
+            background-color: blue;
+            width: 100%;
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        button {
+            padding: 10px 20px;
+            margin-top: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h1>Мультиплеерная игра</h1>
+        <div class="player-info">
+            <div class="player" id="player1-info">
+                <strong>Игрок 1 (Красный)</strong>
+                <p>Управление: W, A, S, D<br>Стрельба: Space</p>
+                <div class="health-bar">
+                    <div class="health" id="health1"></div>
+                </div>
+            </div>
+            <div class="player" id="player2-info">
+                <strong>Игрок 2 (Синий)</strong>
+                <p>Управление: Стрелки<br>Стрельба: Enter</p>
+                <div class="health-bar">
+                    <div class="health" id="health2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+    
+    <div class="game-over" id="gameOver">
+        <h2 id="winner">Игрок X победил!</h2>
+        <button id="restartBtn">Начать заново</button>
+    </div>
+
+    <script>
+        // Получаем элемент canvas и его контекст
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Здоровье игроков
+        let player1Health = 100;
+        let player2Health = 100;
+
+        // Параметры игроков
+        const player1 = {
+            x: 100,
+            y: canvas.height / 2,
+            width: 40,
+            height: 40,
+            color: 'red',
+            speed: 5,
+            bullets: [],
+            lastShot: 0,
+            cooldown: 500 // милисекунд между выстрелами
+        };
+
+        const player2 = {
+            x: canvas.width - 100,
+            y: canvas.height / 2,
+            width: 40,
+            height: 40,
+            color: 'blue',
+            speed: 5,
+            bullets: [],
+            lastShot: 0,
+            cooldown: 500
+        };
+
+        // Параметры пуль
+        const bulletSpeed = 7;
+        const bulletSize = 10;
+        const bulletDamage = 10;
+
+        // Управление
+        const keys = {};
+
+        // Отслеживание нажатий клавиш
+        window.addEventListener('keydown', function(e) {
+            keys[e.key] = true;
+        });
+
+        window.addEventListener('keyup', function(e) {
+            keys[e.key] = false;
+        });
+
+        // Перезапуск игры
+        document.getElementById('restartBtn').addEventListener('click', function() {
+            resetGame();
+        });
+
+        function resetGame() {
+            player1Health = 100;
+            player2Health = 100;
+            
+            player1.x = 100;
+            player1.y = canvas.height / 2;
+            player1.bullets = [];
+            
+            player2.x = canvas.width - 100;
+            player2.y = canvas.height / 2;
+            player2.bullets = [];
+            
+            updateHealthBars();
+            document.getElementById('gameOver').style.display = 'none';
+            
+            // Восстанавливаем игровой цикл
+            if (!isGameRunning) {
+                isGameRunning = true;
+                gameLoop();
+            }
+        }
+
+        // Обновление информации о здоровье
+        function updateHealthBars() {
+            document.getElementById('health1').style.width = player1Health + '%';
+            document.getElementById('health2').style.width = player2Health + '%';
+        }
+
+        // Управление игроком 1
+        function movePlayer1() {
+            if (keys['w'] || keys['W']) player1.y -= player1.speed;
+            if (keys['s'] || keys['S']) player1.y += player1.speed;
+            if (keys['a'] || keys['A']) player1.x -= player1.speed;
+            if (keys['d'] || keys['D']) player1.x += player1.speed;
+
+            // Стрельба
+            if ((keys[' '] || keys['Spacebar']) && Date.now() - player1.lastShot > player1.cooldown) {
+                player1.bullets.push({
+                    x: player1.x + player1.width,
+                    y: player1.y + player1.height / 2,
+                    radius: bulletSize / 2,
+                    color: player1.color
+                });
+                player1.lastShot = Date.now();
+            }
+
+            // Ограничение движения в пределах холста
+            player1.x = Math.max(0, Math.min(canvas.width - player1.width, player1.x));
+            player1.y = Math.max(0, Math.min(canvas.height - player1.height, player1.y));
+        }
+
+        // Управление игроком 2
+        function movePlayer2() {
+            if (keys['ArrowUp']) player2.y -= player2.speed;
+            if (keys['ArrowDown']) player2.y += player2.speed;
+            if (keys['ArrowLeft']) player2.x -= player2.speed;
+            if (keys['ArrowRight']) player2.x += player2.speed;
+
+            // Стрельба
+            if (keys['Enter'] && Date.now() - player2.lastShot > player2.cooldown) {
+                player2.bullets.push({
+                    x: player2.x,
+                    y: player2.y + player2.height / 2,
+                    radius: bulletSize / 2,
+                    color: player2.color
+                });
+                player2.lastShot = Date.now();
+            }
+
+            // Ограничение движения в пределах холста
+            player2.x = Math.max(0, Math.min(canvas.width - player2.width, player2.x));
+            player2.y = Math.max(0, Math.min(canvas.height - player2.height, player2.y));
+        }
+
+        // Обновление положения пуль
+        function updateBullets() {
+            // Пули игрока 1 движутся вправо
+            for (let i = player1.bullets.length - 1; i >= 0; i--) {
+                const bullet = player1.bullets[i];
+                bullet.x += bulletSpeed;
+
+                // Проверка попадания в игрока 2
+                if (bullet.x + bullet.radius > player2.x && 
+                    bullet.x - bullet.radius < player2.x + player2.width &&
+                    bullet.y + bullet.radius > player2.y && 
+                    bullet.y - bullet.radius < player2.y + player2.height) {
+                    player2Health -= bulletDamage;
+                    updateHealthBars();
+                    player1.bullets.splice(i, 1);
+                    
+                    if (player2Health <= 0) {
+                        endGame(1);
+                    }
+                    continue;
+                }
+
+                // Удаление пуль, вышедших за пределы экрана
+                if (bullet.x - bullet.radius > canvas.width) {
+                    player1.bullets.splice(i, 1);
+                }
+            }
+
+            // Пули игрока 2 движутся влево
+            for (let i = player2.bullets.length - 1; i >= 0; i--) {
+                const bullet = player2.bullets[i];
+                bullet.x -= bulletSpeed;
+
+                // Проверка попадания в игрока 1
+                if (bullet.x + bullet.radius > player1.x && 
+                    bullet.x - bullet.radius < player1.x + player1.width &&
+                    bullet.y + bullet.radius > player1.y && 
+                    bullet.y - bullet.radius < player1.y + player1.height) {
+                    player1Health -= bulletDamage;
+                    updateHealthBars();
+                    player2.bullets.splice(i, 1);
+                    
+                    if (player1Health <= 0) {
+                        endGame(2);
+                    }
+                    continue;
+                }
+
+                // Удаление пуль, вышедших за пределы экрана
+                if (bullet.x + bullet.radius < 0) {
+                    player2.bullets.splice(i, 1);
+                }
+            }
+        }
+
+        // Завершение игры
+        function endGame(winner) {
+            document.getElementById('winner').textContent = `Игрок ${winner} победил!`;
+            document.getElementById('gameOver').style.display = 'block';
+            isGameRunning = false;
+        }
+
+        // Отрисовка всех элементов
+        function draw() {
+            // Очистка холста
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Рисуем игрока 1
+            ctx.fillStyle = player1.color;
+            ctx.fillRect(player1.x, player1.y, player1.width, player1.height);
+
+            // Рисуем игрока 2
+            ctx.fillStyle = player2.color;
+            ctx.fillRect(player2.x, player2.y, player2.width, player2.height);
+
+            // Рисуем пули игрока 1
+            ctx.fillStyle = player1.color;
+            player1.bullets.forEach(bullet => {
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Рисуем пули игрока 2
+            ctx.fillStyle = player2.color;
+            player2.bullets.forEach(bullet => {
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Игровой цикл
+        let isGameRunning = true;
+        function gameLoop() {
+            if (!isGameRunning) return;
+            
+            movePlayer1();
+            movePlayer2();
+            updateBullets();
+            draw();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Запуск игры
+        resetGame();
+    </script>
+</body>
+</html>
