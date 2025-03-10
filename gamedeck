@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Deck RX Clone MVP</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+        .card, .shop-card { display: inline-block; margin: 5px; padding: 10px; border: 1px solid #000; cursor: pointer; }
+        .card:hover, .shop-card:hover { background-color: #f0f0f0; }
+        #message { color: #333; }
+        #shop { display: none; margin-top: 20px; }
+        button { padding: 10px 20px; margin: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Deck RX Клон</h1>
+    <div id="game">
+        <p>Твой прогресс: <span id="playerProgress">0</span>/10 | Прогресс ИИ: <span id="aiProgress">0</span>/10</p>
+        <p>Твое здоровье: <span id="playerHealth">20</span> | Здоровье ИИ: <span id="aiHealth">20</span></p>
+        <p>Твоя энергия: <span id="playerEnergy">3</span> | Твое топливо: <span id="playerFuel">0</span></p>
+        <p>Твои карты в руке:</p>
+        <div id="playerHand"></div>
+        <div id="shop">
+            <p>Магазин (выбери карту):</p>
+            <div id="shopCards"></div>
+        </div>
+        <button id="shopButton">Открыть магазин</button>
+        <button id="endTurnButton">Закончить ход</button>
+        <p id="message"></p>
+    </div>
+    <script>
+        // Карты: начальные слабые и сильные для магазина
+        const cardPool = [
+            { name: "Рывок", move: 1, attack: 0, fuel: 1, cost: 0, energy: 1 },
+            { name: "Толчок", move: 0, attack: 1, fuel: 1, cost: 0, energy: 1 },
+            { name: "Маневр", move: 1, attack: 0, fuel: 1, cost: 0, energy: 1 },
+            { name: "Ускорение", move: 2, attack: 0, fuel: 2, cost: 3, energy: 2 },
+            { name: "Атака", move: 0, attack: 3, fuel: 2, cost: 3, energy: 2 },
+            { name: "Дрифт", move: 1, attack: 2, fuel: 2, cost: 4, energy: 2 },
+            { name: "Турбо", move: 3, attack: 0, fuel: 3, cost: 5, energy: 3 }
+        ];
+
+        // Инициализация
+        let playerProgress = 0;
+        let aiProgress = 0;
+        let playerHealth = 20;
+        let aiHealth = 20;
+        let playerEnergy = 3;
+        let playerFuel = 0;
+        let playerDeck = [cardPool[0], cardPool[1], cardPool[2], cardPool[0]];
+        let playerDiscard = [];
+        let playerHand = [];
+        let aiDeck = [cardPool[0], cardPool[1], cardPool[2], cardPool[0]];
+        let aiDiscard = [];
+        let aiHand = [];
+        let aiEnergy = 3;
+        const shopPool = cardPool.slice(3);
+
+        const playerHandDiv = document.getElementById("playerHand");
+        const shopDiv = document.getElementById("shop");
+        const shopCardsDiv = document.getElementById("shopCards");
+        const endTurnButton = document.getElementById("endTurnButton");
+        const shopButton = document.getElementById("shopButton");
+        const message = document.getElementById("message");
+
+        // Привязка событий к кнопкам
+        endTurnButton.onclick = aiTurn;
+        shopButton.onclick = renderShop;
+
+        // Перемешивание колоды
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Выдача карт в руку
+        function drawCards(deck, hand, discard, count) {
+            for (let i = 0; i < count; i++) {
+                if (deck.length === 0) {
+                    if (discard.length === 0) break;
+                    deck.push(...shuffle(discard));
+                    discard.length = 0;
+                }
+                hand.push(deck.shift());
+            }
+        }
+
+        // Отображение руки игрока
+        function renderPlayerHand() {
+            playerHandDiv.innerHTML = "";
+            playerHand.forEach((card, index) => {
+                const cardDiv = document.createElement("div");
+                cardDiv.className = "card";
+                cardDiv.innerText = `${card.name} (Д: ${card.move}, А: ${card.attack}, Э: ${card.energy})`;
+                cardDiv.onclick = () => playCard(index);
+                playerHandDiv.appendChild(cardDiv);
+            });
+        }
+
+        // Отображение магазина
+        function renderShop() {
+            shopDiv.style.display = "block";
+            shopCardsDiv.innerHTML = "";
+            shopPool.forEach((card, index) => {
+                const shopCardDiv = document.createElement("div");
+                shopCardDiv.className = "shop-card";
+                shopCardDiv.innerText = `${card.name} (Д: ${card.move}, А: ${card.attack}, Э: ${card.energy}, Стоимость: ${card.cost})`;
+                shopCardDiv.onclick = () => buyCard(index);
+                shopCardsDiv.appendChild(shopCardDiv);
+            });
+        }
+
+        // Ход игрока
+        function playCard(index) {
+            if (playerHealth <= 0 || aiHealth <= 0 || playerProgress >= 10 || aiProgress >= 10) return;
+            const card = playerHand[index];
+            if (playerEnergy < card.energy) {
+                message.innerText = "Недостаточно энергии!";
+                return;
+            }
+            playerEnergy -= card.energy;
+            playerProgress += card.move;
+            aiHealth -= card.attack;
+            playerFuel += card.fuel;
+            message.innerText = `Ты сыграл "${card.name}"! Прогресс: +${card.move}, Урон ИИ: ${card.attack}, Топливо: +${card.fuel}.`;
+            playerDiscard.push(playerHand.splice(index, 1)[0]);
+            updateStats();
+            renderPlayerHand();
+            if (playerProgress >= 10) endGame("Ты первым достиг финиша!");
+            else if (aiHealth <= 0) endGame("Ты уничтожил ИИ!");
+            // Убрали автоматический вызов renderShop() чтобы можно было сыграть несколько карт за ход
+        }
+
+        // Покупка карты
+        function buyCard(index) {
+            const card = shopPool[index];
+            if (playerFuel >= card.cost) {
+                playerFuel -= card.cost;
+                playerDeck.push(card);
+                message.innerText = `Куплена карта "${card.name}"!`;
+                updateStats();
+                shopDiv.style.display = "none"; // Скрываем магазин после покупки
+            } else {
+                message.innerText = "Недостаточно топлива!";
+            }
+        }
+
+        // Ход ИИ
+        function aiTurn() {
+            if (aiHealth <= 0 || playerHealth <= 0 || aiProgress >= 10 || playerProgress >= 10) return;
+            if (aiHand.length === 0) drawCards(aiDeck, aiHand, aiDiscard, 2);
+            let playableCardIndex = aiHand.findIndex(card => aiEnergy >= card.energy);
+            if (playableCardIndex === -1) {
+                message.innerText = "ИИ пропускает ход (нет энергии).";
+            } else {
+                const card = aiHand[playableCardIndex];
+                aiEnergy -= card.energy;
+                aiProgress += card.move;
+                playerHealth -= card.attack;
+                message.innerText = `ИИ сыграл "${card.name}"! Прогресс ИИ: +${card.move}, Твой урон: ${card.attack}.`;
+                aiDiscard.push(aiHand.splice(playableCardIndex, 1)[0]);
+            }
+            updateStats();
+            if (aiProgress >= 10) endGame("ИИ первым достиг финиша!");
+            else if (playerHealth <= 0) endGame("ИИ уничтожил тебя!");
+            else startTurn();
+        }
+
+        // Начало хода
+        function startTurn() {
+            playerEnergy = 3;
+            aiEnergy = 3;
+            drawCards(playerDeck, playerHand, playerDiscard, 2);
+            renderPlayerHand();
+            updateStats();
+            message.innerText = "Твой ход! Играй карты и покупай улучшения.";
+        }
+
+        // Обновление статистики
+        function updateStats() {
+            document.getElementById("playerProgress").innerText = playerProgress;
+            document.getElementById("aiProgress").innerText = aiProgress;
+            document.getElementById("playerHealth").innerText = playerHealth;
+            document.getElementById("aiHealth").innerText = aiHealth;
+            document.getElementById("playerEnergy").innerText = playerEnergy;
+            document.getElementById("playerFuel").innerText = playerFuel;
+        }
+
+        // Завершение игры
+        function endGame(endMessage) {
+            message.innerText = endMessage;
+            endTurnButton.disabled = true;
+            shopButton.disabled = true;
+        }
+
+        // Инициализация игры
+        window.onload = function() {
+            shuffle(playerDeck);
+            shuffle(aiDeck);
+            startTurn();
+        };
+    </script>
+</body>
+</html>
