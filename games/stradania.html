@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Страдающее Средневековье</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5e6c8;
+            color: #49281A;
+        }
+        
+        h1, h2, h3 {
+            text-align: center;
+            color: #771c1c;
+        }
+        
+        .game-container {
+            display: none;
+            border: 2px solid #771c1c;
+            border-radius: 5px;
+            padding: 20px;
+            margin-top: 20px;
+            background-color: #f9f1e0;
+        }
+        
+        .lobby {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .player-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .player-card {
+            border: 1px solid #771c1c;
+            background-color: #f9f1e0;
+            padding: 10px;
+            width: 200px;
+            border-radius: 5px;
+            box-shadow: 3px 3px 5px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        
+        .player-card.active {
+            border: 3px solid #00a300;
+        }
+        
+        .player-card.current-player {
+            background-color: #ffe0b3;
+        }
+        
+        .resource {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+        
+        .action-area {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        button {
+            background-color: #771c1c;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+        }
+        
+        button:hover {
+            background-color: #550c0c;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        .log-area {
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid #771c1c;
+            padding: 10px;
+            margin-top: 20px;
+            background-color: #fff;
+            font-size: 14px;
+        }
+
+        .event-display {
+            background-color: #ffe0b3;
+            padding: 10px;
+            border: 1px solid #771c1c;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .resources-area, .buildings-area, .event-area {
+            margin-top: 20px;
+            border: 1px solid #771c1c;
+            padding: 10px;
+            background-color: #fff;
+        }
+        
+        .building {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #f0f0f0;
+            border-radius: 3px;
+        }
+        
+        #game-code-display {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #771c1c;
+        }
+        
+        .tab {
+            display: inline-block;
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #c9a987;
+            margin-right: 5px;
+            border-radius: 5px 5px 0 0;
+        }
+        
+        .tab.active {
+            background-color: #771c1c;
+            color: white;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 15px;
+            border: 1px solid #771c1c;
+            background-color: #f9f1e0;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+
+        .deaths-counter {
+            font-size: 24px;
+            color: #771c1c;
+            text-align: center;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Страдающее Средневековье</h1>
+    <p class="deaths-counter">Смертей за игру: <span id="death-counter">0</span></p>
+    
+    <div id="login-container">
+        <h2>Войти в игру</h2>
+        <div style="text-align: center;">
+            <input type="text" id="player-name" placeholder="Ваше имя" maxlength="15" style="padding: 5px; margin-right: 10px;">
+            <button id="create-game-btn">Создать игру</button>
+            <div style="margin-top: 20px;">
+                <input type="text" id="game-code-input" placeholder="Код игры" style="padding: 5px; margin-right: 10px;">
+                <button id="join-game-btn">Присоединиться</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="lobby-container" class="game-container">
+        <h2>Лобби игры</h2>
+        <div class="lobby">
+            <h3>Код игры:</h3>
+            <div id="game-code-display">XXXX</div>
+            <p>Игроки в лобби: <span id="player-count">1</span>/6</p>
+            <div id="lobby-player-list"></div>
+            <button id="start-game-btn" disabled>Начать игру (Нужно от 2 до 6 игроков)</button>
+        </div>
+    </div>
+    
+    <div id="game-container" class="game-container">
+        <div class="tabs">
+            <div class="tab active" data-tab="game-board">Игра</div>
+            <div class="tab" data-tab="player-stats">Статистика</div>
+            <div class="tab" data-tab="rules">Правила</div>
+        </div>
+        
+        <div id="game-board" class="tab-content active">
+            <h2>Год <span id="game-year">1</span> | Сезон: <span id="game-season">Весна</span></h2>
+            
+            <div class="event-area">
+                <h3>Текущее событие</h3>
+                <div id="current-event" class="event-display">
+                    Ожидание событий...
+                </div>
+            </div>
+            
+            <h3>Игроки</h3>
+            <div id="player-list" class="player-list"></div>
+            
+            <div class="action-area" id="action-buttons">
+                <button id="harvest-btn">Собрать урожай (+5 еды, -3 здоровья)</button>
+                <button id="hunt-btn">Охотиться (+3 еды, -2 здоровья)</button>
+                <button id="pray-btn">Молиться (+2 благословения, -1 здоровья)</button>
+                <button id="rest-btn">Отдыхать (+4 здоровья)</button>
+                <button id="trade-btn">Торговать</button>
+                <button id="build-btn">Строить</button>
+                <button id="end-turn-btn">Завершить ход</button>
+            </div>
+            
+            <div class="log-area" id="game-log">
+                <p>Игра началась! Добро пожаловать в страдающее средневековье!</p>
+            </div>
+        </div>
+        
+        <div id="player-stats" class="tab-content">
+            <h2>Статистика игроков</h2>
+            <div id="stats-content">
+                <table style="width: 100%; border-collapse: collapse; text-align: center;">
+                    <thead>
+                        <tr>
+                            <th style="border: 1px solid #771c1c; padding: 8px;">Игрок</th>
+                            <th style="border: 1px solid #771c1c; padding: 8px;">Пережил сезонов</th>
+                            <th style="border: 1px solid #771c1c; padding: 8px;">Построено зданий</th>
+                            <th style="border: 1px solid #771c1c; padding: 8px;">Раз умирал</th>
+                            <th style="border: 1px solid #771c1c; padding: 8px;">Очки выживания</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-table-body">
+                        <!-- Здесь будет статистика игроков -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="rules" class="tab-content">
+            <h2>Правила игры</h2>
+            <div>
+                <h3>Основные механики:</h3>
+                <ol>
+                    <li>У каждого игрока есть ресурсы: Здоровье, Еда, Благословения и Деньги.</li>
+                    <li>Каждый ход (сезон) игрок должен выполнить одно действие.</li>
+                    <li>В конце сезона все игроки теряют 2 единицы еды (зимой 4).</li>
+                    <li>Если у игрока закончилась еда, он теряет 5 здоровья за сезон.</li>
+                    <li>Если здоровье упало до 0, игрок умирает и возрождается со стартовыми ресурсами.</li>
+                    <li>Каждый сезон происходит случайное событие, которое влияет на всех игроков.</li>
+                    <li>Игра длится 20 лет (80 сезонов). Побеждает игрок с наибольшими очками выживания.</li>
+                </ol>
+                
+                <h3>Действия:</h3>
+                <ul>
+                    <li><strong>Собрать урожай:</strong> +5 еды, -3 здоровья</li>
+                    <li><strong>Охотиться:</strong> +3 еды, -2 здоровья</li>
+                    <li><strong>Молиться:</strong> +2 благословения, -1 здоровья</li>
+                    <li><strong>Отдыхать:</strong> +4 здоровья</li>
+                    <li><strong>Торговать:</strong> Обменивать ресурсы</li>
+                    <li><strong>Строить:</strong> Возводить здания, дающие бонусы</li>
+                </ul>
+                
+                <h3>Здания:</h3>
+                <ul>
+                    <li><strong>Хижина (5 монет):</strong> +1 здоровье каждый сезон</li>
+                    <li><strong>Огород (7 монет):</strong> +1 еда каждый сезон</li>
+                    <li><strong>Алтарь (10 монет):</strong> +1 благословение каждый сезон</li>
+                    <li><strong>Лавка (15 монет):</strong> +1 монета каждый сезон</li>
+                </ul>
+                
+                <h3>Благословения:</h3>
+                <p>Используйте благословения, чтобы избежать негативных последствий событий.</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальные окна -->
+    <div id="trade-modal" style="display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
+        <div style="background-color: #f9f1e0; margin: 15% auto; padding: 20px; border: 1px solid #771c1c; width: 50%; border-radius: 5px;">
+            <h3>Торговля</h3>
+            <div style="display: flex; justify-content: space-around;">
+                <div>
+                    <h4>Продать:</h4>
+                    <button class="trade-btn" data-sell="food" data-buy="money">2 Еды → 1 Монета</button><br><br>
+                    <button class="trade-btn" data-sell="blessing" data-buy="money">1 Благословение → 2 Монеты</button><br><br>
+                    <button class="trade-btn" data-sell="health" data-buy="money">2 Здоровья → 1 Монета</button>
+                </div>
+                <div>
+                    <h4>Купить:</h4>
+                    <button class="trade-btn" data-sell="money" data-buy="food">1 Монета → 1 Еда</button><br><br>
+                    <button class="trade-btn" data-sell="money" data-buy="blessing">3 Монеты → 1 Благословение</button><br><br>
+                    <button class="trade-btn" data-sell="money" data-buy="health">2 Монеты → 1 Здоровье</button>
+                </div>
+            </div>
+            <div style="text-align: center; margin-top: 20px;">
+                <button id="close-trade-modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="build-modal" style="display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
+        <div style="background-color: #f9f1e0; margin: 15% auto; padding: 20px; border: 1px solid #771c1c; width: 50%; border-radius: 5px;">
+            <h3>Строительство</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="build-btn" data-building="hut">Хижина (5 монет): +1 здоровье каждый сезон</button>
+                <button class="build-btn" data-building="garden">Огород (7 монет): +1 еда каждый сезон</button>
+                <button class="build-btn" data-building="altar">Алтарь (10 монет): +1 благословение каждый сезон</button>
+                <button class="build-btn" data-building="shop">Лавка (15 монет): +1 монета каждый сезон</button>
+            </div>
+            <div style="text-align: center; margin-top: 20px;">
+                <button id="close-build-modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Симуляция локального мультиплеера (для MVP)
+        let gameState = {
+            gameCode: '',
+            players: [],
+            currentPlayerIndex: 0,
+            year: 1,
+            season: 0,
+            seasons: ['Весна', 'Лето', 'Осень', 'Зима'],
+            currentEvent: null,
+            totalDeaths: 0,
+            isGameStarted: false
+        };
+        
+        // Определение событий
+        const events = [
+            { name: "Чума", description: "Эпидемия чумы! Все теряют 3 здоровья, если нет благословения.", effect: player => {
+                if (player.resources.blessing > 0) {
+                    player.resources.blessing--;
+                    return `${player.name} избежал чумы, потратив благословение!`;
+                } else {
+                    player.resources.health -= 3;
+                    return `${player.name} потерял 3 здоровья от чумы!`;
+                }
+            }},
+            { name: "Урожайный год", description: "Отличный урожай! Все получают +2 еды.", effect: player => {
+                player.resources.food += 2;
+                return `${player.name} получил 2 еды от хорошего урожая!`;
+            }},
+            { name: "Война", description: "Война! Все теряют 2 монеты, если есть, иначе -2 здоровья.", effect: player => {
+                if (player.resources.money >= 2) {
+                    player.resources.money -= 2;
+                    return `${player.name} потерял 2 монеты на войну!`;
+                } else {
+                    player.resources.health -= 2;
+                    return `У ${player.name} не было монет, потерял 2 здоровья на войне!`;
+                }
+            }},
+            { name: "Благословение", description: "Благословение свыше! Все получают +1 благословение.", effect: player => {
+                player.resources.blessing += 1;
+                return `${player.name} получил благословение свыше!`;
+            }},
+            { name: "Голод", description: "Голодные времена! Потребление еды удвоено в этом сезоне!", effect: player => {
+                // Эффект реализуется в функции endTurn
+                return `${player.name} должен быть готов к повышенному расходу еды!`;
+            }},
+            { name: "Налоги", description: "Король требует налоги! Все платят 3 монеты или теряют 3 здоровья.", effect: player => {
+                if (player.resources.money >= 3) {
+                    player.resources.money -= 3;
+                    return `${player.name} заплатил 3 монеты налогов.`;
+                } else {
+                    player.resources.health -= 3;
+                    return `${player.name} не смог заплатить налоги и потерял 3 здоровья!`;
+                }
+            }},
+            { name: "Праздник", description: "Праздник урожая! Все получают +1 здоровья и +1 еды.", effect: player => {
+                player.resources.health += 1;
+                player.resources.food += 1;
+                return `${player.name} получил 1 здоровья и 1 еду на празднике!`;
+            }},
+            { name: "Воры", description: "Воры! Все теряют 2 еды, если нет благословения.", effect: player => {
+                if (player.resources.blessing > 0) {
+                    player.resources.blessing--;
+                    return `${player.name} защитил свою еду благословением!`;
+                } else if (player.resources.food >= 2) {
+                    player.resources.food -= 2;
+                    return `${player.name} потерял 2 еды из-за воров!`;
+                } else {
+                    player.resources.food = 0;
+                    return `${player.name} потерял всю еду из-за воров!`;
+                }
+            }},
+            { name: "Торговцы", description: "Приехали торговцы! Все получают +2 монеты.", effect: player => {
+                player.resources.money += 2;
+                return `${player.name} получил 2 монеты от торговцев!`;
+            }},
+            { name: "Холода", description: "Необычные холода! Все теряют 2 здоровья, если нет хижины.", effect: player => {
+                if (player.buildings.some(b => b.type === "hut")) {
+                    return `${player.name} пережил холода в своей хижине!`;
+                } else {
+                    player.resources.health -= 2;
+                    return `${player.name} потерял 2 здоровья от холода!`;
+                }
+            }}
+        ];
+        
+        // Стоимость зданий
+        const buildingCosts = {
+            hut: 5,
+            garden: 7,
+            altar: 10,
+            shop: 15
+        };
+        
+        // Эффекты зданий
+        const buildingEffects = {
+            hut: player => { player.resources.health += 1; return `${player.name} восстановил 1 здоровья от хижины!`; },
+            garden: player => { player.resources.food += 1; return `${player.name} получил 1 еду от огорода!`; },
+            altar: player => { player.resources.blessing += 1; return `${player.name} получил 1 благословение от алтаря!`; },
+            shop: player => { player.resources.money += 1; return `${player.name} получил 1 монету от лавки!`; }
+        };
+        
+        // Названия зданий
+        const buildingNames = {
+            hut: "Хижина",
+            garden: "Огород",
+            altar: "Алтарь",
+            shop: "Лавка"
+        };
+        
+        // Ссылки на DOM-элементы
+        const elements = {
+            loginContainer: document.getElementById('login-container'),
+            lobbyContainer: document.getElementById('lobby-container'),
+            gameContainer: document.getElementById('game-container'),
+            
+            playerNameInput: document.getElementById('player-name'),
+            createGameBtn: document.getElementById('create-game-btn'),
+            gameCodeInput: document.getElementById('game-code-input'),
+            joinGameBtn: document.getElementById('join-game-btn'),
+            
+            lobbyPlayerList: document.getElementById('lobby-player-list'),
+            gameCodeDisplay: document.getElementById('game-code-display'),
+            playerCount: document.getElementById('player-count'),
+            startGameBtn: document.getElementById('start-game-btn'),
+            
+            playerList: document.getElementById('player-list'),
+            gameYear: document.getElementById('game-year'),
+            gameSeason: document.getElementById('game-season'),
+            currentEvent: document.getElementById('current-event'),
+            gameLog: document.getElementById('game-log'),
+            
+            harvestBtn: document.getElementById('harvest-btn'),
+            huntBtn: document.getElementById('hunt-btn'),
+            prayBtn: document.getElementById('pray-btn'),
+            restBtn: document.getElementById('rest-btn'),
+            tradeBtn: document.getElementById('trade-btn'),
+            buildBtn: document.getElementById('build-btn'),
+            endTurnBtn: document.getElementById('end-turn-btn'),
+            
+            tradeModal: document.getElementById('trade-modal'),
+            buildModal: document.getElementById('build-modal'),
+            closeTradeModal: document.getElementById('close-trade-modal'),
+            closeBuildModal: document.getElementById('close-build-modal'),
+            
+            statsTableBody: document.getElementById('stats-table-body'),
+            deathCounter: document.getElementById('death-counter')
+        };
+        
+        // Инициализация переключения табов
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Убираем активный класс у всех табов
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                // Делаем текущий таб активным
+                this.classList.add('active');
+                
+                // Скрываем все контенты табов
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                // Показываем контент активного таба
+                document.getElementById(this.dataset.tab).classList.add('active');
+            });
+        });
+        
+        // Функция генерации случайного кода игры
+        function generateGameCode() {
+            return Math.floor(1000 + Math.random() * 9000).toString();
+        }
+        
+        // Обработчик для создания игры
+        elements.createGameBtn.addEventListener('click', () => {
+            const playerName = elements.playerNameInput.value.trim();
+            if (!playerName) {
+                alert('Введите имя игрока!');
+                return;
+            }
+            
+            // Создаем код игры и добавляем игрока
+            gameState.gameCode = generateGameCode();
+            gameState.players = [{
+                id: 1,
+                name: playerName,
+                resources: { health: 10, food: 5, blessing: 1, money: 3 },
+                buildings: [],
+                stats: { seasonsAlive: 0, buildingsBuilt: 0, deaths: 0, survivalPoints: 0 },
+                hasActed: false
+            }];
+            
+            // Обновляем интерфейс
+            elements.gameCodeDisplay.textContent = gameState.gameCode;
+            elements.playerCount.textContent = gameState.players.length;
+            updateLobbyPlayerList();
+            
+            // Скрываем экран логина и показываем лобби
+            elements.loginContainer.style.display = 'none';
+            elements.lobbyContainer.style.display = 'block';
+        });
+        
+        // Обработчик для присоединения к игре
+        elements.joinGameBtn.addEventListener('click', () => {
+            const playerName = elements.playerNameInput.value.trim();
+            const gameCode = elements.gameCodeInput.value.trim();
+            
+            if (!playerName) {
+                alert('Введите имя игрока!');
+                return;
+            }
+            
+            if (gameCode !== gameState.gameCode) {
+                alert('Неверный код игры!');
+                return;
+            }
+            
+            if (gameState.players.length >= 6) {
+                alert('Игра уже заполнена!');
+                return;
+            }
+            
+            // Добавляем игрока
+            gameState.players.push({
+                id: gameState.players.length + 1,
+                name: playerName,
+                resources: { health: 10, food: 5, blessing: 1, money: 3 },
+                buildings: [],
+                stats: { seasonsAlive: 0, buildingsBuilt: 0, deaths: 0, survivalPoints: 0 },
+                hasActed: false
+            });
+            
+            // Обновляем интерфейс
+            elements.playerCount.textContent = gameState.players.length;
+            updateLobbyPlayerList();
+            
+            // Скрываем экран логина и показываем лобби
+            elements.loginContainer.style.display = 'none';
+            elements.lobbyContainer.style.display = 'block';
+            
+            // Проверяем возможность начать игру
+            checkStartGame();
+        });
+        
+        // Функция для обновления списка игроков в лобби
+        function updateLobbyPlayerList() {
+            elements.lobbyPlayerList.innerHTML = '';
+            gameState.players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.textContent = player.name;
+                playerDiv.style.padding = '5px';
+                playerDiv.style.margin = '5px';
+                playerDiv.style.backgroundColor = '#f9f1e0';
+                playerDiv.style.border = '1px solid #771c1c';
+                playerDiv.style.borderRadius = '3px';
+                elements.lobbyPlayerList.appendChild(playerDiv);
+            });
+        }
+        
+        // Функция проверки возможности начать игру
+        function checkStartGame() {
+            if (gameState.players.length >= 2) {
+                elements.startGameBtn.disabled = false;
+                elements.startGameBtn.textContent = `Начать игру (${gameState.players.length}/6 игроков)`;
+            } else {
+                elements.startGameBtn.disabled = true;
+                elements.startGameBtn.textContent = `Начать игру (Нужно от 2 до 6 игроков)`;
+            }
+        }
+        
+        // Обработчик для начала игры
+        elements.startGameBtn.addEventListener('click', () => {
+            // Скрываем лобби и показываем игру
+            elements.lobbyContainer.style.display = 'none';
+            elements.gameContainer.style.display = 'block';
+            
+            // Начинаем игру
+            startGame();
+        });
+        
+        // Функция начала игры
+        function startGame() {
+            gameState.isGameStarted = true;
+            gameState.currentPlayerIndex = 0;
+            gameState.year = 1;
+            gameState.season = 0;
+            
+            // Генерируем первое событие
+            generateEvent();
+            
+            // Обновляем интерфейс
+            updateGameInfo();
+            updatePlayerList();
+            updateStats();
+            
+            // Логируем начало игры
+            logMessage("Игра началась! " + gameState.players[gameState.currentPlayerIndex].name + " ходит первым.");
+        }
+        
+        // Функция генерации случайного события
+        function generateEvent() {
+            const eventIndex = Math.floor(Math.random() * events.length);
+            gameState.currentEvent = events[eventIndex];
+            
+            elements.currentEvent.innerHTML = `
+                <strong>${gameState.currentEvent.name}</strong><br>
+                ${gameState.currentEvent.description}
+            `;
+            
+            logMessage(`Событие: ${gameState.currentEvent.name} - ${gameState.currentEvent.description}`);
+        }
+        
+        // Функция обновления информации об игре
+        function updateGameInfo() {
+            elements.gameYear.textContent = gameState.year;
+            elements.gameSeason.textContent = gameState.seasons[gameState.season];
+        }
+        
+        // Функция обновления списка игроков
+        function updatePlayerList() {
+            elements.playerList.innerHTML = '';
+            
+            gameState.players.forEach((player, index) => {
+                const playerCard = document.createElement('div');
+                playerCard.className = 'player-card';
+                if (index === gameState.currentPlayerIndex) {
+                    playerCard.classList.add('current-player');
+                }
+                
+                // Проверка на активность игрока
+                if (!player.hasActed && index === gameState.currentPlayerIndex) {
+                    playerCard.classList.add('active');
+                }
+                
+                // Основная информация о игроке
+                playerCard.innerHTML = `
+                    <h3>${player.name} ${index === gameState.currentPlayerIndex ? '(ходит)' : ''}</h3>
+                    <div class="resources-area">
+                        <div class="resource">
+                            <span>❤️ Здоровье:</span>
+                            <span>${player.resources.health}</span>
+                        </div>
+                        <div class="resource">
+                            <span>🍖 Еда:</span>
+                            <span>${player.resources.food}</span>
+                        </div>
+                        <div class="resource">
+                            <span>✝️ Благословения:</span>
+                            <span>${player.resources.blessing}</span>
+                        </div>
+                        <div class="resource">
+                            <span>💰 Деньги:</span>
+                            <span>${player.resources.money}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="buildings-area">
+                        <h4>Здания:</h4>
+                        ${player.buildings.length > 0 ? 
+                            player.buildings.map(b => `
+                                <div class="building">
+                                    <span>${buildingNames[b.type]}</span>
+                                </div>
+                            `).join('') : 
+                            '<p>Нет зданий</p>'
+                        }
+                    </div>
+                `;
+                
+                elements.playerList.appendChild(playerCard);
+            });
+            
+            // Обновляем доступность кнопок действий
+            updateActionButtons();
+        }
+        
+        // Функция обновления доступности кнопок действий
+        function updateActionButtons() {
+            const isCurrentPlayerTurn = !gameState.players[gameState.currentPlayerIndex].hasActed;
+            
+            elements.harvestBtn.disabled = !isCurrentPlayerTurn;
+            elements.huntBtn.disabled = !isCurrentPlayerTurn;
+            elements.prayBtn.disabled = !isCurrentPlayerTurn;
+            elements.restBtn.disabled = !isCurrentPlayerTurn;
+            elements.tradeBtn.disabled = !isCurrentPlayerTurn;
+            elements.buildBtn.disabled = !isCurrentPlayerTurn;
+            elements.endTurnBtn.disabled = !isCurrentPlayerTurn;
+        }
+        
+        // Функция обновления статистики
+        function updateStats() {
+            elements.statsTableBody.innerHTML = '';
+            
+            gameState.players.forEach(player => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td style="border: 1px solid #771c1c; padding: 8px;">${player.name}</td>
+                    <td style="border: 1px solid #771c1c; padding: 8px;">${player.stats.seasonsAlive}</td>
+                    <td style="border: 1px solid #771c1c; padding: 8px;">${player.stats.buildingsBuilt}</td>
+                    <td style="border: 1px solid #771c1c; padding: 8px;">${player.stats.deaths}</td>
+                    <td style="border: 1px solid #771c1c; padding: 8px;">${player.stats.survivalPoints}</td>
+                `;
+                elements.statsTableBody.appendChild(row);
+            });
+            
+            elements.deathCounter.textContent = gameState.totalDeaths;
+        }
+        
+        // Функция добавления сообщения в лог
+        function logMessage(message) {
+            const logEntry = document.createElement('p');
+            logEntry.textContent = message;
+            elements.gameLog.appendChild(logEntry);
+            elements.gameLog.scrollTop = elements.gameLog.scrollHeight;
+        }
+        
+        // Функция проверки и обработки смерти игрока
+        function checkPlayerDeath(player) {
+            if (player.resources.health <= 0) {
+                player.stats.deaths++;
+                gameState.totalDeaths++;
+                
+                // Обнуляем ресурсы и даем базовый набор
+                player.resources = { health: 10, food: 5, blessing: 1, money: 3 };
+                
+                // Обнуляем здания (игрок теряет все здания при смерти)
+                player.buildings = [];
+                
+                logMessage(`☠️ ${player.name} умер и возродился со стартовыми ресурсами!`);
+                return true;
+            }
+            return false;
+        }
+        
+        // Функция обработки конца хода игрока
+        function endPlayerTurn() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            currentPlayer.hasActed = true;
+            
+            // Переходим к следующему игроку
+            gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+            
+            // Если все игроки сделали ход, переходим к следующему сезону
+            if (gameState.currentPlayerIndex === 0) {
+                endSeason();
+            }
+            
+            // Обновляем интерфейс
+            updatePlayerList();
+            
+            logMessage(`Ход перешел к игроку ${gameState.players[gameState.currentPlayerIndex].name}`);
+        }
+        
+        // Функция обработки конца сезона
+        function endSeason() {
+            logMessage(`Сезон ${gameState.seasons[gameState.season]} года ${gameState.year} завершен!`);
+            
+            // Применяем эффекты зданий для всех игроков
+            gameState.players.forEach(player => {
+                player.buildings.forEach(building => {
+                    const effect = buildingEffects[building.type](player);
+                    logMessage(effect);
+                });
+            });
+            
+            // Потребление еды в конце сезона
+            const isWinter = gameState.season === 3; // Зима
+            const isHungerEvent = gameState.currentEvent.name === "Голод";
+            
+            gameState.players.forEach(player => {
+                // Увеличиваем счетчик выживших сезонов
+                player.stats.seasonsAlive++;
+                
+                // Базовое потребление еды
+                let foodConsumption = isWinter ? 4 : 2;
+                
+                // Если событие "Голод", увеличиваем потребление
+                if (isHungerEvent) {
+                    foodConsumption *= 2;
+                }
+                
+                // Потребляем еду
+                if (player.resources.food >= foodConsumption) {
+                    player.resources.food -= foodConsumption;
+                    logMessage(`${player.name} потребил ${foodConsumption} еды.`);
+                } else {
+                    // Если еды недостаточно, игрок теряет здоровье
+                    const missingFood = foodConsumption - player.resources.food;
+                    player.resources.food = 0;
+                    player.resources.health -= 5;
+                    logMessage(`${player.name} не хватило ${missingFood} еды! Потеряно 5 здоровья!`);
+                    
+                    // Проверяем, не умер ли игрок
+                    checkPlayerDeath(player);
+                }
+                
+                // Сбрасываем флаг действия
+                player.hasActed = false;
+                
+                // Начисляем очки выживания
+                player.stats.survivalPoints += 1 + player.buildings.length;
+            });
+            
+            // Переходим к следующему сезону
+            gameState.season = (gameState.season + 1) % 4;
+            
+            // Если наступила весна, увеличиваем год
+            if (gameState.season === 0) {
+                gameState.year++;
+                logMessage(`Наступил новый год ${gameState.year}!`);
+            }
+            
+            // Генерируем новое событие
+            generateEvent();
+            
+            // Обновляем интерфейс
+            updateGameInfo();
+            updatePlayerList();
+            updateStats();
+        }
+        
+        // Обработчики для кнопок действий
+        elements.harvestBtn.addEventListener('click', () => {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            player.resources.food += 5;
+            player.resources.health -= 3;
+            
+            logMessage(`${player.name} собрал урожай: +5 еды, -3 здоровья`);
+            
+            // Проверяем, не умер ли игрок
+            if (checkPlayerDeath(player)) {
+                updateStats();
+            }
+            
+            endPlayerTurn();
+        });
+        
+        elements.huntBtn.addEventListener('click', () => {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            player.resources.food += 3;
+            player.resources.health -= 2;
+            
+            logMessage(`${player.name} поохотился: +3 еды, -2 здоровья`);
+            
+            // Проверяем, не умер ли игрок
+            if (checkPlayerDeath(player)) {
+                updateStats();
+            }
+            
+            endPlayerTurn();
+        });
+        
+        elements.prayBtn.addEventListener('click', () => {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            player.resources.blessing += 2;
+            player.resources.health -= 1;
+            
+            logMessage(`${player.name} помолился: +2 благословения, -1 здоровья`);
+            
+            // Проверяем, не умер ли игрок
+            if (checkPlayerDeath(player)) {
+                updateStats();
+            }
+            
+            endPlayerTurn();
+        });
+        
+        elements.restBtn.addEventListener('click', () => {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            player.resources.health += 4;
+            
+            logMessage(`${player.name} отдохнул: +4 здоровья`);
+            
+            endPlayerTurn();
+        });
+        
+        elements.tradeBtn.addEventListener('click', () => {
+            elements.tradeModal.style.display = 'block';
+        });
+        
+        elements.buildBtn.addEventListener('click', () => {
+            elements.buildModal.style.display = 'block';
+            
+            // Обновляем доступность кнопок строительства в зависимости от денег
+            const player = gameState.players[gameState.currentPlayerIndex];
+            document.querySelectorAll('.build-btn').forEach(button => {
+                const buildingType = button.dataset.building;
+                button.disabled = player.resources.money < buildingCosts[buildingType];
+            });
+        });
+        
+        elements.endTurnBtn.addEventListener('click', () => {
+            logMessage(`${gameState.players[gameState.currentPlayerIndex].name} пропустил ход`);
+            endPlayerTurn();
+        });
+        
+        // Обработчики для модальных окон
+        elements.closeTradeModal.addEventListener('click', () => {
+            elements.tradeModal.style.display = 'none';
+        });
+        
+        elements.closeBuildModal.addEventListener('click', () => {
+            elements.buildModal.style.display = 'none';
+        });
+        
+        // Обработчики для кнопок торговли
+        document.querySelectorAll('.trade-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const player = gameState.players[gameState.currentPlayerIndex];
+                const sellResource = button.dataset.sell;
+                const buyResource = button.dataset.buy;
+                
+                // Определяем количество ресурсов для обмена
+                let sellAmount, buyAmount;
+                
+                if (sellResource === 'food' && buyResource === 'money') {
+                    sellAmount = 2;
+                    buyAmount = 1;
+                } else if (sellResource === 'blessing' && buyResource === 'money') {
+                    sellAmount = 1;
+                    buyAmount = 2;
+                } else if (sellResource === 'health' && buyResource === 'money') {
+                    sellAmount = 2;
+                    buyAmount = 1;
+                } else if (sellResource === 'money' && buyResource === 'food') {
+                    sellAmount = 1;
+                    buyAmount = 1;
+                } else if (sellResource === 'money' && buyResource === 'blessing') {
+                    sellAmount = 3;
+                    buyAmount = 1;
+                } else if (sellResource === 'money' && buyResource === 'health') {
+                    sellAmount = 2;
+                    buyAmount = 1;
+                }
+                
+                // Проверяем, достаточно ли ресурсов
+                if (player.resources[sellResource] < sellAmount) {
+                    alert(`Недостаточно ${sellResource} для обмена!`);
+                    return;
+                }
+                
+                // Осуществляем обмен
+                player.resources[sellResource] -= sellAmount;
+                player.resources[buyResource] += buyAmount;
+                
+                logMessage(`${player.name} обменял ${sellAmount} ${getResourceName(sellResource)} на ${buyAmount} ${getResourceName(buyResource)}`);
+                
+                // Проверяем, не умер ли игрок (если продал здоровье)
+                if (sellResource === 'health' && checkPlayerDeath(player)) {
+                    updateStats();
+                }
+                
+                // Закрываем модальное окно и завершаем ход
+                elements.tradeModal.style.display = 'none';
+                endPlayerTurn();
+            });
+        });
+        
+        // Функция получения названия ресурса
+        function getResourceName(resourceKey) {
+            const names = {
+                'health': 'здоровья',
+                'food': 'еды',
+                'blessing': 'благословения',
+                'money': 'монет'
+            };
+            return names[resourceKey] || resourceKey;
+        }
+        
+        // Обработчики для кнопок строительства
+        document.querySelectorAll('.build-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const player = gameState.players[gameState.currentPlayerIndex];
+                const buildingType = button.dataset.building;
+                const cost = buildingCosts[buildingType];
+                
+                // Проверяем, достаточно ли денег
+                if (player.resources.money < cost) {
+                    alert(`Недостаточно денег для строительства! Нужно ${cost} монет.`);
+                    return;
+                }
+                
+                // Списываем деньги и добавляем здание
+                player.resources.money -= cost;
+                player.buildings.push({ type: buildingType });
+                player.stats.buildingsBuilt++;
+                
+                logMessage(`${player.name} построил ${buildingNames[buildingType]} за ${cost} монет`);
+                
+                // Закрываем модальное окно и завершаем ход
+                elements.buildModal.style.display = 'none';
+                endPlayerTurn();
+            });
+        });
+        
+        // Генерация симуляции игроков для тестирования (раскомментировать для тестирования)
+        /*
+        function generateTestPlayers() {
+            gameState.gameCode = "1234";
+            gameState.players = [
+                {
+                    id: 1,
+                    name: "Игрок 1",
+                    resources: { health: 10, food: 5, blessing: 1, money: 3 },
+                    buildings: [],
+                    stats: { seasonsAlive: 0, buildingsBuilt: 0, deaths: 0, survivalPoints: 0 },
+                    hasActed: false
+                },
+                {
+                    id: 2,
+                    name: "Игрок 2",
+                    resources: { health: 10, food: 5, blessing: 1, money: 3 },
+                    buildings: [],
+                    stats: { seasonsAlive: 0, buildingsBuilt: 0, deaths: 0, survivalPoints: 0 },
+                    hasActed: false
+                }
+            ];
+            elements.loginContainer.style.display = 'none';
+            elements.gameContainer.style.display = 'block';
+            startGame();
+        }
+        //generateTestPlayers();
+        */
+        
+        // Закрытие модальных окон при клике вне их
+        window.onclick = function(event) {
+            if (event.target === elements.tradeModal) {
+                elements.tradeModal.style.display = 'none';
+            }
+            if (event.target === elements.buildModal) {
+                elements.buildModal.style.display = 'none';
+            }
+        };
+    </script>
+</body>
+</html>
