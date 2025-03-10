@@ -819,56 +819,80 @@
                         }
                         
                         if (player2Health <= 0) {
-                        endGame(1);
+                            endGame('Хост (Красный)', 'Здоровье противника закончилось');
+                        }
                     }
-                    continue;
-                }
 
-                // Удаление пуль, вышедших за пределы экрана
-                if (bullet.x - bullet.radius > canvas.width) {
-                    player1.bullets.splice(i, 1);
-                }
-            }
-
-            // Пули игрока 2 движутся влево
-            for (let i = player2.bullets.length - 1; i >= 0; i--) {
-                const bullet = player2.bullets[i];
-                bullet.x -= bulletSpeed;
-
-                // Проверка попадания в игрока 1
-                if (bullet.x + bullet.radius > player1.x && 
-                    bullet.x - bullet.radius < player1.x + player1.width &&
-                    bullet.y + bullet.radius > player1.y && 
-                    bullet.y - bullet.radius < player1.y + player1.height) {
-                    player1Health -= bulletDamage;
-                    updateHealthBars();
-                    player2.bullets.splice(i, 1);
-                    
-                    if (player1Health <= 0) {
-                        endGame(2);
+                    // Удаление пуль, вылетевших за пределы экрана
+                    if (bullet.x - bullet.radius > canvas.width) {
+                        player1.bullets.splice(i, 1);
                     }
-                    continue;
                 }
 
-                // Удаление пуль, вышедших за пределы экрана
-                if (bullet.x + bullet.radius < 0) {
-                    player2.bullets.splice(i, 1);
+                // Пули игрока 2 движутся влево
+                for (let i = player2.bullets.length - 1; i >= 0; i--) {
+                    const bullet = player2.bullets[i];
+                    bullet.x -= bulletSpeed;
+
+                    // Проверка попадания в игрока 1
+                    if (bullet.x + bullet.radius > player1.x && 
+                        bullet.x - bullet.radius < player1.x + player1.width &&
+                        bullet.y + bullet.radius > player1.y && 
+                        bullet.y - bullet.radius < player1.y + player1.height) {
+                        player1Health -= bulletDamage;
+                        updateHealthBars();
+                        player2.bullets.splice(i, 1);
+                        
+                        if (gameMode !== 'local') {
+                            sendGameState();
+                        }
+                        
+                        if (player1Health <= 0) {
+                            endGame('Гость (Синий)', 'Здоровье противника закончилось');
+                        }
+                    }
+
+                    // Удаление пуль, вылетевших за пределы экрана
+                    if (bullet.x + bullet.radius < 0) {
+                        player2.bullets.splice(i, 1);
+                    }
                 }
-            }
-            
-            // Если игра по сети и мой ход, отправляем обновление
-            if (gameMode !== 'local' && isMyTurn && (player1.bullets.length > 0 || player2.bullets.length > 0)) {
-                sendGameState();
             }
         }
 
-        // Завершение игры
-        function endGame(winner, reason = '') {
+        // Отрисовка игроков
+        function drawPlayers() {
+            // Рисуем игрока 1
+            ctx.fillStyle = player1.color;
+            ctx.fillRect(player1.x, player1.y, player1.width, player1.height);
+
+            // Рисуем игрока 2
+            ctx.fillStyle = player2.color;
+            ctx.fillRect(player2.x, player2.y, player2.width, player2.height);
+
+            // Рисуем пули игрока 1
+            for (const bullet of player1.bullets) {
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                ctx.fillStyle = bullet.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            // Рисуем пули игрока 2
+            for (const bullet of player2.bullets) {
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                ctx.fillStyle = bullet.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        // Окончание игры
+        function endGame(winner, reason) {
             isGameRunning = false;
-            
-            const winnerText = document.getElementById('winner');
-            winnerText.textContent = reason || `Игрок ${winner} победил!`;
-            
+            document.getElementById('winner').textContent = 'Победитель: ' + winner + ' (' + reason + ')';
             showScreen(gameOverScreen);
             
             if (gameMode !== 'local' && conn && conn.open) {
@@ -880,47 +904,32 @@
             }
         }
 
-        // Отрисовка всех элементов
-        function draw() {
+        // Основной игровой цикл
+        function gameLoop() {
+            if (!isGameRunning) return;
+
             // Очистка холста
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Рисуем игрока 1
-            ctx.fillStyle = player1.color;
-            ctx.fillRect(player1.x, player1.y, player1.width, player1.height);
-
-            // Рисуем игрока 2
-            ctx.fillStyle = player2.color;
-            ctx.fillRect(player2.x, player2.y, player2.width, player2.height);
-
-            // Рисуем пули игрока 1
-            ctx.fillStyle = player1.color;
-            player1.bullets.forEach(bullet => {
-                ctx.beginPath();
-                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Рисуем пули игрока 2
-            ctx.fillStyle = player2.color;
-            player2.bullets.forEach(bullet => {
-                ctx.beginPath();
-                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-                ctx.fill();
-            });
-        }
-
-        // Игровой цикл
-        function gameLoop() {
-            if (!isGameRunning) return;
-            
+            // Обновление позиций игроков
             movePlayer1();
             movePlayer2();
+
+            // Обновление положения пуль
             updateBullets();
-            draw();
-            
+
+            // Отрисовка игроков и пуль
+            drawPlayers();
+
+            // Запрос на следующий кадр
             requestAnimationFrame(gameLoop);
         }
+
+        // Инициализация игры при загрузке страницы
+        window.onload = function() {
+            showScreen(startScreen);
+        };
     </script>
 </body>
 </html>
+                            
