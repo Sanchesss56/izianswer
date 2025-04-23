@@ -1,0 +1,1057 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Блокус</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+      box-sizing: border-box;
+      min-height: 100vh;
+      background-color: var(--bg_color, #f0f0f0);
+      color: var(--text_color, #333);
+      overflow-y: auto;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    h1 {
+      margin: 10px 0;
+      font-size: 24px;
+    }
+    #menu, #game, #online-setup {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 360px;
+    }
+    #menu.show, #game.show, #online-setup.show {
+      display: flex;
+    }
+    #status {
+      font-size: 16px;
+      margin: 10px 0;
+      text-align: center;
+    }
+    #game-board {
+      position: relative;
+      display: inline-block;
+      background-color: var(--button_color, #333);
+      padding: 5px;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
+    #board-canvas {
+      display: block;
+      width: 290px;
+      height: 290px;
+      touch-action: none;
+    }
+    #piece-selector {
+      margin: 10px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      justify-content: center;
+      max-width: 100%;
+    }
+    .piece-option {
+      width: 40px;
+      height: 40px;
+      background-color: var(--bg_color, #fff);
+      border: 1px solid var(--button_color, #333);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .piece-option.selected {
+      border-color: var(--button_text_color, #4CAF50);
+    }
+    #rotate, #flip, #reset, #rules-button, #hints-button, .menu-button, #copy-code-button {
+      margin: 5px;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      background-color: var(--button_color, #4CAF50);
+      color: var(--button_text_color, white);
+      border: none;
+      border-radius: 4px;
+      touch-action: manipulation;
+    }
+    #rotate:hover, #flip:hover, #reset:hover, #rules-button:hover, #hints-button:hover, .menu-button:hover, #copy-code-button:hover {
+      background-color: var(--button_color, #45a049);
+      filter: brightness(90%);
+    }
+    #rules {
+      display: none;
+      max-width: 100%;
+      background-color: var(--bg_color, #fff);
+      border: 1px solid var(--button_color, #333);
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.2);
+      font-size: 14px;
+    }
+    #rules.show {
+      display: block;
+    }
+    #online-code, #join-code {
+      margin: 5px;
+      padding: 8px;
+      font-size: 14px;
+      width: 100%;
+      max-width: 200px;
+      border: 1px solid var(--button_color, #333);
+      border-radius: 4px;
+      background-color: var(--bg_color, #fff);
+      color: var(--text_color, #333);
+    }
+    #code-container {
+      display: none;
+      margin: 10px;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+    #code-container.show {
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+  <div id="menu" class="show">
+    <h1>Блокус</h1>
+    <button class="menu-button" onclick="startSinglePlayer()">Одиночная игра</button>
+    <button class="menu-button" onclick="startLocalMultiplayer()">Мультиплеер на одном ПК</button>
+    <button class="menu-button" onclick="showOnlineSetup()">Мультиплеер онлайн</button>
+  </div>
+  <div id="online-setup">
+    <h1>Мультиплеер онлайн</h1>
+    <button class="menu-button" onclick="createOnlineGame()">Создать игру</button>
+    <div>
+      <input id="join-code" type="text" placeholder="Введи код">
+      <button class="menu-button" onclick="joinOnlineGame()">Присоединиться</button>
+    </div>
+    <button class="menu-button" onclick="showMenu()">Назад</button>
+  </div>
+  <div id="game">
+    <h1>Блокус</h1>
+    <p id="player-info">Игрок 1 — <span style="color: #e63946;">красные</span>, Игрок 2 — <span style="color: #1d4ed8;">синие</span></p>
+    <div id="status">Ход Игрока 1 (Счёт: Игрок 1: 0, Игрок 2: 0)</div>
+    <div id="code-container">
+      <input id="online-code" type="text" readonly placeholder="Код появится здесь">
+      <button id="copy-code-button" onclick="copyCode()">Копировать код</button>
+    </div>
+    <div id="piece-selector"></div>
+    <button id="rotate">Повернуть (R/К)</button>
+    <button id="flip">Отзеркалить (F/А)</button>
+    <button id="hints-button">Показать подсказки</button>
+    <div id="game-board">
+      <canvas id="board-canvas" width="290" height="290"></canvas>
+    </div>
+    <button id="rules-button">Показать/Скрыть правила</button>
+    <div id="rules">
+      <h2>Правила Блокуса</h2>
+      <ul>
+        <li>Игра на доске 14x14. У каждого игрока есть 21 фигура (полимино от 1 до 5 клеток).</li>
+        <li>Игрок 1 (красные) начинает в угол (0,0). Игрок 2 (синие) начинает в (13,13).</li>
+        <li>Выбери фигуру, используй "Повернуть" (R/К) или "Отзеркалить" (F/А).</li>
+        <li>Тапни для предпросмотра (зелёный — можно поставить, красный — нельзя).</li>
+        <li>Жёлтым подсвечиваются ходы для фигур (если включены подсказки).</li>
+        <li>Фигуры ставятся с касанием углом своих фигур, но без касания сторонами.</li>
+        <li>Если ходов нет, ход передаётся противнику.</li>
+        <li>Счёт — занятые клетки. Побеждает тот, у кого больше клеток.</li>
+      </ul>
+    </div>
+    <button id="reset">Вернуться в меню</button>
+  </div>
+
+  <script>
+    // Telegram Web App integration
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.expand();
+      const theme = window.Telegram.WebApp.themeParams;
+      document.documentElement.style.setProperty('--bg_color', theme.bg_color || '#f0f0f0');
+      document.documentElement.style.setProperty('--text_color', theme.text_color || '#333');
+      document.documentElement.style.setProperty('--button_color', theme.button_color || '#4CAF50');
+      document.documentElement.style.setProperty('--button_text_color', theme.button_text_color || '#fff');
+    }
+
+    const SIZE = 14;
+    const CELL_SIZE = 20;
+    const CANVAS_SIZE = SIZE * CELL_SIZE + 10;
+    const canvas = document.getElementById('board-canvas');
+    const ctx = canvas.getContext('2d');
+    let board = Array(SIZE).fill().map(() => Array(SIZE).fill(0)); // 0: пусто, 1: игрок 1, 2: игрок 2
+    let gameActive = false;
+    let currentPlayer = 1; // 1: игрок 1, 2: игрок 2
+    let scores = { player1: 0, player2: 0 };
+    let selectedPiece = null;
+    let pieceRotation = 0;
+    let pieceFlipped = false;
+    let previewPosition = null;
+    let hintPositions = [];
+    let showHints = false;
+    let gameMode = null; // 'single', 'local', 'online'
+    let peer = null;
+    let conn = null;
+    let isHost = false;
+
+    const PIECES = [
+      [[1]], [[1,1]], [[1,1,1]], [[1,1,1,1]], [[1,1,1,1,1]],
+      [[1,1],[1,0]], [[1,1,1],[1,0,0]], [[1,1,1],[0,1,0]], [[1,1,1],[0,0,1]], [[1,1,0],[0,1,1]],
+      [[1,1,1,1],[0,1,0,0]], [[1,1,1,1],[0,0,1,0]], [[1,1,1,0],[0,0,1,1]], [[1,1,0,0],[0,1,1,1]],
+      [[1,1,1],[0,1,0],[0,1,0]], [[1,1,1],[0,1,0],[0,0,1]], [[1,1,0],[1,0,1]], [[1,1,1],[1,0,0],[1,0,0]],
+      [[1,1],[1,1]], [[1,1,1,1],[0,0,0,1]], [[1,1,1,1,0],[0,0,0,1,1]]
+    ];
+    let availablePieces = { player1: [...PIECES], player2: [...PIECES] };
+
+    function showMenu() {
+      document.getElementById('menu').classList.add('show');
+      document.getElementById('game').classList.remove('show');
+      document.getElementById('online-setup').classList.remove('show');
+      document.getElementById('code-container').classList.remove('show');
+      if (peer) {
+        console.log('Destroying peer connection');
+        peer.destroy();
+        peer = null;
+        conn = null;
+      }
+      gameActive = false;
+    }
+
+    function startSinglePlayer() {
+      gameMode = 'single';
+      resetGame();
+      document.getElementById('menu').classList.remove('show');
+      document.getElementById('game').classList.add('show');
+      document.getElementById('player-info').textContent = 'Ты — красные, Грок — синие';
+    }
+
+    function startLocalMultiplayer() {
+      gameMode = 'local';
+      resetGame();
+      document.getElementById('menu').classList.remove('show');
+      document.getElementById('game').classList.add('show');
+      document.getElementById('player-info').textContent = 'Игрок 1 — красные, Игрок 2 — синие';
+    }
+
+    function showOnlineSetup() {
+      document.getElementById('menu').classList.remove('show');
+      document.getElementById('online-setup').classList.add('show');
+      document.getElementById('join-code').value = '';
+    }
+
+    function createOnlineGame() {
+      console.log('Creating online game...');
+      gameMode = 'online';
+      isHost = true;
+      peer = new Peer();
+      console.log('Peer object created:', peer);
+      peer.on('open', (id) => {
+        console.log('Peer opened with ID:', id);
+        document.getElementById('online-code').value = id;
+        document.getElementById('player-info').textContent = 'Ты — красные (хост), ждём синих';
+        document.getElementById('status').textContent = 'Ожидание второго игрока...';
+        document.getElementById('game').classList.add('show');
+        document.getElementById('online-setup').classList.remove('show');
+        document.getElementById('code-container').classList.add('show');
+        document.getElementById('piece-selector').style.display = 'none';
+        document.getElementById('rotate').style.display = 'none';
+        document.getElementById('flip').style.display = 'none';
+        document.getElementById('hints-button').style.display = 'none';
+      });
+      peer.on('error', (err) => {
+        console.error('Peer error:', err.type, err);
+        document.getElementById('status').textContent = `Ошибка соединения: ${err.type}. Попробуй снова.`;
+        document.getElementById('code-container').classList.remove('show');
+      });
+      peer.on('connection', (connection) => {
+        console.log('Connection established with client:', connection.peer);
+        conn = connection;
+        resetGame();
+        document.getElementById('code-container').classList.remove('show');
+        document.getElementById('piece-selector').style.display = 'flex';
+        document.getElementById('rotate').style.display = 'inline-block';
+        document.getElementById('flip').style.display = 'inline-block';
+        document.getElementById('hints-button').style.display = 'inline-block';
+        conn.on('data', handleNetworkData);
+        conn.on('close', () => {
+          console.log('Client disconnected');
+          document.getElementById('status').textContent = 'Игрок отключился. Игра приостановлена.';
+          gameActive = false;
+        });
+        conn.on('error', (err) => {
+          console.error('Connection error:', err);
+          document.getElementById('status').textContent = 'Ошибка соединения с игроком.';
+        });
+        document.getElementById('player-info').textContent = 'Ты — красные, противник — синие';
+        document.getElementById('status').textContent = `Ход Игрока 1 (Счёт: Игрок 1: ${scores.player1}, Игрок 2: ${scores.player2})`;
+      });
+    }
+
+    function joinOnlineGame() {
+      const code = document.getElementById('join-code').value.trim();
+      if (!code) {
+        console.log('No code provided for joining');
+        document.getElementById('status').textContent = 'Введи код!';
+        return;
+      }
+      console.log('Joining game with code:', code);
+      gameMode = 'online';
+      isHost = false;
+      peer = new Peer();
+      console.log('Peer object created for joining:', peer);
+      peer.on('open', () => {
+        console.log('Peer opened for joining');
+        conn = peer.connect(code);
+        conn.on('open', () => {
+          console.log('Connected to host with code:', code);
+          document.getElementById('online-setup').classList.remove('show');
+          document.getElementById('game').classList.add('show');
+          document.getElementById('player-info').textContent = 'Ты — синие, хост — красные';
+          resetGame();
+          conn.on('data', handleNetworkData);
+          conn.on('close', () => {
+            console.log('Host disconnected');
+            document.getElementById('status').textContent = 'Хост отключился. Игра приостановлена.';
+            gameActive = false;
+          });
+        });
+        conn.on('error', (err) => {
+          console.error('Connection error:', err);
+          document.getElementById('status').textContent = 'Не удалось подключиться. Проверь код.';
+        });
+      });
+      peer.on('error', (err) => {
+        console.error('Peer error:', err.type, err);
+        document.getElementById('status').textContent = `Ошибка соединения: ${err.type}. Попробуй снова.`;
+      });
+    }
+
+    function copyCode() {
+      const code = document.getElementById('online-code');
+      try {
+        code.select();
+        document.execCommand('copy');
+        document.getElementById('status').textContent = 'Код скопирован!';
+        console.log('Code copied:', code.value);
+      } catch (err) {
+        console.error('Copy failed:', err);
+        navigator.clipboard.writeText(code.value).then(() => {
+          document.getElementById('status').textContent = 'Код скопирован!';
+          console.log('Code copied via Clipboard API:', code.value);
+        }).catch((err) => {
+          console.error('Clipboard API failed:', err);
+          document.getElementById('status').textContent = 'Не удалось скопировать. Скопируй вручную.';
+        });
+      }
+    }
+
+    function handleNetworkData(data) {
+      console.log('Received network data:', data);
+      if (data.type === 'move') {
+        placePiece(data.row, data.col, data.piece, data.player);
+        availablePieces[data.player === 1 ? 'player1' : 'player2'].splice(data.pieceIndex, 1);
+        scores[data.player === 1 ? 'player1' : 'player2'] += data.piece.flat().reduce((sum, cell) => sum + cell, 0);
+        drawBoard();
+        createPieceSelector();
+        if (!checkGameEnd()) {
+          currentPlayer = currentPlayer === 1 ? 2 : 1;
+          document.getElementById('status').textContent = `Ход Игрока ${currentPlayer} (Счёт: Игрок 1: ${scores.player1}, Игрок 2: ${scores.player2})`;
+          updateHints();
+        }
+      } else if (data.type === 'reset') {
+        console.log('Reset received from host');
+        resetGame();
+      }
+    }
+
+    function drawBoard() {
+      ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      ctx.fillStyle = window.Telegram?.WebApp?.themeParams?.secondary_bg_color || '#fff';
+      ctx.fillRect(0, 0, SIZE * CELL_SIZE, SIZE * CELL_SIZE);
+      ctx.strokeStyle = window.Telegram?.WebApp?.themeParams?.text_color || '#333';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * CELL_SIZE, 0);
+        ctx.lineTo(i * CELL_SIZE, SIZE * CELL_SIZE);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i * CELL_SIZE);
+        ctx.lineTo(SIZE * CELL_SIZE, i * CELL_SIZE);
+        ctx.stroke();
+      }
+      for (let row = 0; row < SIZE; row++) {
+        for (let col = 0; col < SIZE; col++) {
+          if (board[row][col] !== 0) {
+            ctx.fillStyle = board[row][col] === 1 ? '#e63946' : '#1d4ed8';
+            ctx.fillRect(col * CELL_SIZE + 1, row * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+          }
+        }
+      }
+      if (showHints && gameActive) {
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+        hintPositions.forEach(({ row, col, piece }) => {
+          for (let i = 0; i < piece.length; i++) {
+            for (let j = 0; j < piece[i].length; j++) {
+              if (piece[i][j]) {
+                const r = row + i;
+                const c = col + j;
+                if (r < SIZE && c < SIZE) {
+                  ctx.fillRect(c * CELL_SIZE + 1, r * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+                }
+              }
+            }
+          }
+        });
+      }
+      if (previewPosition && selectedPiece !== null) {
+        const { row, col } = previewPosition;
+        const player = (gameMode === 'online' && !isHost) ? 2 : (gameMode === 'local' && currentPlayer === 2) ? 2 : 1;
+        const piece = getTransformedPiece(selectedPiece);
+        const canPlace = canPlacePiece(row, col, piece, player);
+        ctx.fillStyle = canPlace ? 'rgba(76, 175, 80, 0.5)' : 'rgba(255, 0, 0, 0.5)';
+        for (let i = 0; i < piece.length; i++) {
+          for (let j = 0; j < piece[i].length; j++) {
+            if (piece[i][j]) {
+              const r = row + i;
+              const c = col + j;
+              if (r < SIZE && c < SIZE) {
+                ctx.fillRect(c * CELL_SIZE + 1, r * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    function updateHints() {
+      hintPositions = [];
+      if (!gameActive || !showHints) {
+        drawBoard();
+        return;
+      }
+      const player = (gameMode === 'online' && !isHost) ? 2 : (gameMode === 'local' && currentPlayer === 2) ? 2 : 1;
+      const pieces = player === 1 ? availablePieces.player1 : availablePieces.player2;
+      pieces.forEach((piece, pieceIndex) => {
+        let p = piece;
+        for (let rot = 0; rot < 2; rot++) {
+          for (let flip = 0; flip < 2; flip++) {
+            for (let row = 0; row < SIZE; row++) {
+              for (let col = 0; col < SIZE; col++) {
+                if (canPlacePiece(row, col, p, player)) {
+                  hintPositions.push({ row, col, piece: p });
+                }
+              }
+            }
+            p = flipPiece(p);
+          }
+          p = rotatePiece(p);
+        }
+      });
+      drawBoard();
+    }
+
+    function createPieceSelector() {
+      const selector = document.getElementById('piece-selector');
+      selector.innerHTML = '';
+      const player = (gameMode === 'online' && !isHost) ? 2 : (gameMode === 'local' && currentPlayer === 2) ? 2 : 1;
+      const pieces = player === 1 ? availablePieces.player1 : availablePieces.player2;
+      pieces.forEach((piece, index) => {
+        const canvas = document.createElement('canvas');
+        canvas.classList.add('piece-option');
+        canvas.width = 40;
+        canvas.height = 40;
+        canvas.dataset.index = index;
+        canvas.addEventListener('click', () => selectPiece(index));
+        canvas.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          selectPiece(index);
+        });
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = player === 1 ? '#e63946' : '#1d4ed8';
+        const cellSize = 8;
+        for (let i = 0; i < piece.length; i++) {
+          for (let j = 0; j < piece[i].length; j++) {
+            if (piece[i][j]) {
+              ctx.fillRect(j * cellSize + 4, i * cellSize + 4, cellSize - 1, cellSize - 1);
+            }
+          }
+        }
+        selector.appendChild(canvas);
+      });
+      if (selectedPiece !== null) {
+        document.querySelector(`.piece-option[data-index="${selectedPiece}"]`).classList.add('selected');
+      }
+    }
+
+    function selectPiece(index) {
+      selectedPiece = index;
+      pieceRotation = 0;
+      pieceFlipped = false;
+      previewPosition = null;
+      createPieceSelector();
+      updateHints();
+    }
+
+    function rotatePiece(piece) {
+      const rows = piece.length;
+      const cols = piece[0].length;
+      const newPiece = Array(cols).fill().map(() => Array(rows).fill(0));
+      for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < cols; j++) {
+          newPiece[j][rows - 1 - i] = piece[i][j];
+        }
+      }
+      return newPiece;
+    }
+
+    function flipPiece(piece) {
+      const rows = piece.length;
+      const cols = piece[0].length;
+      const newPiece = Array(rows).fill().map(() => Array(cols).fill(0));
+      for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < cols; j++) {
+          newPiece[i][cols - 1 - j] = piece[i][j];
+        }
+      }
+      return newPiece;
+    }
+
+    function getTransformedPiece(pieceIndex) {
+      const player = (gameMode === 'online' && !isHost) ? 2 : (gameMode === 'local' && currentPlayer === 2) ? 2 : 1;
+      let piece = player === 1 ? availablePieces.player1[pieceIndex] : availablePieces.player2[pieceIndex];
+      if (pieceFlipped) piece = flipPiece(piece);
+      for (let i = 0; i < pieceRotation; i++) {
+        piece = rotatePiece(piece);
+      }
+      return piece;
+    }
+
+    function canPlacePiece(row, col, piece, player) {
+      const isFirstMove = player === 1 ? scores.player1 === 0 : scores.player2 === 0;
+      for (let i = 0; i < piece.length; i++) {
+        for (let j = 0; j < piece[i].length; j++) {
+          if (piece[i][j]) {
+            const r = row + i;
+            const c = col + j;
+            if (r >= SIZE || c >= SIZE || board[r][c] !== 0) return false;
+          }
+        }
+      }
+      if (isFirstMove) {
+        const startRow = player === 1 ? 0 : SIZE - 1;
+        const startCol = player === 1 ? 0 : SIZE - 1;
+        let valid = false;
+        for (let i = 0; i < piece.length; i++) {
+          for (let j = 0; j < piece[i].length; j++) {
+            if (piece[i][j] && row + i === startRow && col + j === startCol) {
+              valid = true;
+              break;
+            }
+          }
+        }
+        return valid;
+      } else {
+        let hasCorner = false;
+        let hasSide = false;
+        const corners = [[-1,-1], [-1,1], [1,-1], [1,1]];
+        const sides = [[-1,0], [1,0], [0,-1], [0,1]];
+        for (let i = 0; i < piece.length; i++) {
+          for (let j = 0; j < piece[i].length; j++) {
+            if (piece[i][j]) {
+              const r = row + i;
+              const c = col + j;
+              for (const [dr, dc] of corners) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === player) {
+                  hasCorner = true;
+                }
+              }
+              for (const [dr, dc] of sides) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === player) {
+                  hasSide = true;
+                }
+              }
+            }
+          }
+        }
+        return hasCorner && !hasSide;
+      }
+    }
+
+    function placePiece(row, col, piece, player) {
+      for (let i = 0; i < piece.length; i++) {
+        for (let j = 0; j < piece[i].length; j++) {
+          if (piece[i][j]) {
+            board[row + i][col + j] = player;
+          }
+        }
+      }
+    }
+
+    function handleCanvasClick(event) {
+      console.log('handleCanvasClick triggered:', {
+        eventType: event.type,
+        gameActive,
+        selectedPiece,
+        currentPlayer,
+        gameMode,
+        isHost
+      });
+
+      if (!gameActive || selectedPiece === null) {
+        console.log('Click ignored: game not active or no piece selected');
+        return;
+      }
+      if (gameMode === 'online' && ((isHost && currentPlayer !== 1) || (!isHost && currentPlayer !== 2))) {
+        console.log('Click ignored: not your turn in online mode');
+        return;
+      }
+      if (gameMode === 'single' && currentPlayer !== 1) {
+        console.log('Click ignored: not your turn in single mode');
+        return;
+      }
+
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      let x, y;
+
+      if (event.type === 'touchstart' || event.type === 'touchend') {
+        x = (event.touches[0].clientX - rect.left) * scaleX;
+        y = (event.touches[0].clientY - rect.top) * scaleY;
+      } else if (event.type === 'pointerdown' || event.type === 'click') {
+        x = (event.clientX - rect.left) * scaleX;
+        y = (event.clientY - rect.top) * scaleY;
+      }
+
+      console.log('Click coordinates:', { clientX: event.clientX || event.touches[0].clientX, clientY: event.clientY || event.touches[0].clientY, x, y, rect });
+
+      const row = Math.floor(y / CELL_SIZE);
+      const col = Math.floor(x / CELL_SIZE);
+      console.log('Calculated grid position:', { row, col });
+
+      if (row < 0 || row >= SIZE || col < 0 || col >= SIZE) {
+        console.log('Click outside board:', { row, col });
+        return;
+      }
+
+      const player = (gameMode === 'online' && !isHost) ? 2 : (gameMode === 'local' && currentPlayer === 2) ? 2 : 1;
+      const piece = getTransformedPiece(selectedPiece);
+      if (canPlacePiece(row, col, piece, player)) {
+        console.log('Placing piece:', { row, col, piece, player });
+        placePiece(row, col, piece, player);
+        const pieceIndex = selectedPiece;
+        availablePieces[player === 1 ? 'player1' : 'player2'].splice(selectedPiece, 1);
+        scores[player === 1 ? 'player1' : 'player2'] += piece.flat().reduce((sum, cell) => sum + cell, 0);
+        if (gameMode === 'online' && conn) {
+          console.log('Sending move:', { row, col, piece, player, pieceIndex });
+          conn.send({ type: 'move', row, col, piece, player, pieceIndex });
+        }
+        selectedPiece = null;
+        pieceRotation = 0;
+        pieceFlipped = false;
+        previewPosition = null;
+        drawBoard();
+        createPieceSelector();
+        if (!checkGameEnd()) {
+          currentPlayer = currentPlayer === 1 ? 2 : 1;
+          document.getElementById('status').textContent = `Ход Игрока ${currentPlayer} (Счёт: Игрок 1: ${scores.player1}, Игрок 2: ${scores.player2})`;
+          updateHints();
+          createPieceSelector();
+          if (gameMode === 'single' && currentPlayer === 2) {
+            setTimeout(grokMove, 500);
+          }
+        }
+      } else {
+        console.log('Cannot place piece at:', { row, col });
+      }
+    }
+
+    function handleCanvasMove(event) {
+      if (!gameActive || selectedPiece === null) return;
+      if (gameMode === 'online' && ((isHost && currentPlayer !== 1) || (!isHost && currentPlayer !== 2))) return;
+      if (gameMode === 'single' && currentPlayer !== 1) return;
+
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      let x, y;
+
+      if (event.type === 'touchmove') {
+        x = (event.touches[0].clientX - rect.left) * scaleX;
+        y = (event.touches[0].clientY - rect.top) * scaleY;
+      } else {
+        x = (event.clientX - rect.left) * scaleX;
+        y = (event.clientY - rect.top) * scaleY;
+      }
+
+      console.log('Move coordinates:', { x, y, clientX: event.clientX || event.touches[0].clientX, clientY: event.clientY || event.touches[0].clientY });
+
+      const row = Math.floor(y / CELL_SIZE);
+      const col = Math.floor(x / CELL_SIZE);
+
+      if (row >= 0 && row < SIZE && col >= 0 && col < SIZE) {
+        previewPosition = { row, col };
+      } else {
+        previewPosition = null;
+      }
+      drawBoard();
+    }
+
+    function grokMove() {
+      if (!gameActive || gameMode !== 'single' || currentPlayer !== 2) return;
+      const move = minimaxMove();
+      if (move) {
+        placePiece(move.row, move.col, move.piece, 2);
+        availablePieces.player2.splice(move.pieceIndex, 1);
+        scores.player2 += move.piece.flat().reduce((sum, cell) => sum + cell, 0);
+        drawBoard();
+        createPieceSelector();
+        if (!checkGameEnd()) {
+          currentPlayer = 1;
+          document.getElementById('status').textContent = `Твой ход (Счёт: Ты: ${scores.player1}, Грок: ${scores.player2})`;
+          updateHints();
+          createPieceSelector();
+        }
+      } else {
+        if (!checkGameEnd()) {
+          currentPlayer = 1;
+          document.getElementById('status').textContent = `У Грока нет ходов! Твой ход (Счёт: Ты: ${scores.player1}, Грок: ${scores.player2})`;
+          updateHints();
+          createPieceSelector();
+        }
+      }
+    }
+
+    function minimaxMove() {
+      let bestScore = -Infinity;
+      let bestMove = null;
+      const pieceIndices = availablePieces.player2.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, 3);
+      for (const pieceIndex of pieceIndices) {
+        let piece = availablePieces.player2[pieceIndex];
+        for (let rot = 0; rot < 2; rot++) {
+          for (let flip = 0; flip < 2; flip++) {
+            for (let row = 0; row < SIZE; row++) {
+              for (let col = 0; col < SIZE; col++) {
+                if (canPlacePiece(row, col, piece, 2)) {
+                  const boardCopy = board.map(r => [...r]);
+                  const piecesCopy = [...availablePieces.player2];
+                  const scoresCopy = { ...scores };
+                  placePiece(row, col, piece, 2);
+                  availablePieces.player2.splice(pieceIndex, 1);
+                  scores.player2 += piece.flat().reduce((sum, cell) => sum + cell, 0);
+                  const score = minimax(board, 2, false, -Infinity, Infinity);
+                  board = boardCopy;
+                  availablePieces.player2 = piecesCopy;
+                  scores = scoresCopy;
+                  if (score > bestScore) {
+                    bestScore = score;
+                    bestMove = { row, col, piece, pieceIndex };
+                  }
+                }
+              }
+            }
+            piece = flipPiece(piece);
+          }
+          piece = rotatePiece(piece);
+        }
+      }
+      return bestMove;
+    }
+
+    function minimax(board, depth, isMaximizing, alpha, beta) {
+      if (depth === 0 || checkGameEnd(true)) {
+        return evaluateBoard();
+      }
+      if (isMaximizing) {
+        let maxScore = -Infinity;
+        const pieceIndices = availablePieces.player2.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, 3);
+        for (const pieceIndex of pieceIndices) {
+          let piece = availablePieces.player2[pieceIndex];
+          for (let rot = 0; rot < 2; rot++) {
+            for (let flip = 0; flip < 2; flip++) {
+              for (let row = 0; row < SIZE; row++) {
+                for (let col = 0; col < SIZE; col++) {
+                  if (canPlacePiece(row, col, piece, 2)) {
+                    const boardCopy = board.map(r => [...r]);
+                    const piecesCopy = [...availablePieces.player2];
+                    const scoresCopy = { ...scores };
+                    placePiece(row, col, piece, 2);
+                    availablePieces.player2.splice(pieceIndex, 1);
+                    scores.player2 += piece.flat().reduce((sum, cell) => sum + cell, 0);
+                    const score = minimax(board, depth - 1, false, alpha, beta);
+                    board = boardCopy;
+                    availablePieces.player2 = piecesCopy;
+                    scores = scoresCopy;
+                    maxScore = Math.max(maxScore, score);
+                    alpha = Math.max(alpha, score);
+                    if (beta <= alpha) break;
+                  }
+                }
+              }
+              piece = flipPiece(piece);
+            }
+            piece = rotatePiece(piece);
+          }
+        }
+        return maxScore;
+      } else {
+        let minScore = Infinity;
+        const pieceIndices = availablePieces.player1.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, 3);
+        for (const pieceIndex of pieceIndices) {
+          let piece = availablePieces.player1[pieceIndex];
+          for (let rot = 0; rot < 2; rot++) {
+            for (let flip = 0; flip < 2; flip++) {
+              for (let row = 0; row < SIZE; row++) {
+                for (let col = 0; col < SIZE; col++) {
+                  if (canPlacePiece(row, col, piece, 1)) {
+                    const boardCopy = board.map(r => [...r]);
+                    const piecesCopy = [...availablePieces.player1];
+                    const scoresCopy = { ...scores };
+                    placePiece(row, col, piece, 1);
+                    availablePieces.player1.splice(pieceIndex, 1);
+                    scores.player1 += piece.flat().reduce((sum, cell) => sum + cell, 0);
+                    const score = minimax(board, depth - 1, true, alpha, beta);
+                    board = boardCopy;
+                    availablePieces.player1 = piecesCopy;
+                    scores = scoresCopy;
+                    minScore = Math.min(minScore, score);
+                    beta = Math.min(beta, score);
+                    if (beta <= alpha) break;
+                  }
+                }
+              }
+              piece = flipPiece(piece);
+            }
+            piece = rotatePiece(piece);
+          }
+        }
+        return minScore;
+      }
+    }
+
+    function evaluateBoard() {
+      if (checkGameEnd(true)) {
+        return scores.player2 - scores.player1;
+      }
+      let score = (scores.player2 - scores.player1) * 10;
+      score += availablePieces.player1.length * 5 - availablePieces.player2.length * 5;
+      return score;
+    }
+
+    function checkGameEnd(silent = false) {
+      const player1CanMove = availablePieces.player1.some((piece, pieceIndex) => {
+        let p = piece;
+        for (let rot = 0; rot < 2; rot++) {
+          for (let flip = 0; flip < 2; flip++) {
+            for (let row = 0; row < SIZE; row++) {
+              for (let col = 0; col < SIZE; col++) {
+                if (canPlacePiece(row, col, p, 1)) return true;
+              }
+            }
+            p = flipPiece(p);
+          }
+          p = rotatePiece(p);
+        }
+        return false;
+      });
+      const player2CanMove = availablePieces.player2.some((piece, pieceIndex) => {
+        let p = piece;
+        for (let rot = 0; rot < 2; rot++) {
+          for (let flip = 0; flip < 2; flip++) {
+            for (let row = 0; row < SIZE; row++) {
+              for (let col = 0; col < SIZE; col++) {
+                if (canPlacePiece(row, col, p, 2)) return true;
+              }
+            }
+            p = flipPiece(p);
+          }
+          p = rotatePiece(p);
+        }
+        return false;
+      });
+
+      if (!player1CanMove && !player2CanMove) {
+        if (!silent) {
+          if (scores.player1 > scores.player2) {
+            document.getElementById('status').textContent = `Игрок 1 победил! (Счёт: Игрок 1: ${scores.player1}, Игрок 2: ${scores.player2})`;
+          } else if (scores.player2 > scores.player1) {
+            document.getElementById('status').textContent = `Игрок 2 победил! (Счёт: Игрок 2: ${scores.player2}, Игрок 1: ${scores.player1})`;
+          } else {
+            document.getElementById('status').textContent = `Ничья! (Счёт: Игрок 1: ${scores.player1}, Игрок 2: ${scores.player2})`;
+          }
+          gameActive = false;
+        }
+        return true;
+      } else if (!player1CanMove && currentPlayer === 1) {
+        if (!silent) {
+          document.getElementById('status').textContent = `У Игрока 1 нет ходов! Ход Игрока 2 (Счёт: Игрок 1: ${scores.player1}, Игрок 2: ${scores.player2})`;
+          currentPlayer = 2;
+          if (gameMode === 'single') {
+            setTimeout(grokMove, 500);
+          }
+          updateHints();
+          createPieceSelector();
+        }
+        return false;
+      } else if (!player2CanMove && currentPlayer === 2) {
+        if (!silent) {
+          document.getElementById('status').textContent = `У Игрока 2 нет ходов! Ход Игрока 1 (Счёт: Игрок 1: ${scores.player1}, Игрок 2: ${scores.player2})`;
+          currentPlayer = 1;
+          updateHints();
+          createPieceSelector();
+        }
+        return false;
+      }
+      return false;
+    }
+
+    function resetGame() {
+      board = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+      availablePieces = { player1: [...PIECES], player2: [...PIECES] };
+      scores = { player1: 0, player2: 0 };
+      gameActive = true;
+      currentPlayer = 1;
+      selectedPiece = null;
+      pieceRotation = 0;
+      pieceFlipped = false;
+      previewPosition = null;
+      hintPositions = [];
+      showHints = false;
+      document.getElementById('hints-button').textContent = 'Показать подсказки';
+      document.getElementById('status').textContent = `Ход Игрока 1 (Счёт: Игрок 1: 0, Игрок 2: 0)`;
+      document.getElementById('piece-selector').style.display = 'flex';
+      document.getElementById('rotate').style.display = 'inline-block';
+      document.getElementById('flip').style.display = 'inline-block';
+      document.getElementById('hints-button').style.display = 'inline-block';
+      drawBoard();
+      createPieceSelector();
+      updateHints();
+      if (gameMode === 'online' && conn && isHost) {
+        console.log('Sending reset to client');
+        conn.send({ type: 'reset' });
+      }
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (!gameActive || selectedPiece === null) return;
+      if (gameMode === 'online' && ((isHost && currentPlayer !== 1) || (!isHost && currentPlayer !== 2))) return;
+      if (gameMode === 'single' && currentPlayer !== 1) return;
+      const key = event.key.toLowerCase();
+      if (key === 'r' || key === 'к') {
+        pieceRotation = (pieceRotation + 1) % 4;
+        updateHints();
+        drawBoard();
+        createPieceSelector();
+      } else if (key === 'f' || key === 'а') {
+        pieceFlipped = !pieceFlipped;
+        updateHints();
+        drawBoard();
+        createPieceSelector();
+      }
+    });
+
+    canvas.addEventListener('click', handleCanvasClick);
+    canvas.addEventListener('touchstart', (e) => {
+      handleCanvasClick(e);
+    });
+    canvas.addEventListener('pointerdown', handleCanvasClick);
+    canvas.addEventListener('mousemove', handleCanvasMove);
+    canvas.addEventListener('touchmove', handleCanvasMove);
+    canvas.addEventListener('mouseleave', () => {
+      previewPosition = null;
+      drawBoard();
+    });
+    canvas.addEventListener('touchend', () => {
+      previewPosition = null;
+      drawBoard();
+    });
+    document.getElementById('rotate').addEventListener('click', () => {
+      if (selectedPiece !== null && gameActive) {
+        if (gameMode === 'online' && ((isHost && currentPlayer !== 1) || (!isHost && currentPlayer !== 2))) return;
+        if (gameMode === 'single' && currentPlayer !== 1) return;
+        pieceRotation = (pieceRotation + 1) % 4;
+        updateHints();
+        drawBoard();
+        createPieceSelector();
+      }
+    });
+    document.getElementById('flip').addEventListener('click', () => {
+      if (selectedPiece !== null && gameActive) {
+        if (gameMode === 'online' && ((isHost && currentPlayer !== 1) || (!isHost && currentPlayer !== 2))) return;
+        if (gameMode === 'single' && currentPlayer !== 1) return;
+        pieceFlipped = !pieceFlipped;
+        updateHints();
+        drawBoard();
+        createPieceSelector();
+      }
+    });
+    document.getElementById('hints-button').addEventListener('click', () => {
+      showHints = !showHints;
+      document.getElementById('hints-button').textContent = showHints ? 'Скрыть подсказки' : 'Показать подсказки';
+      updateHints();
+    });
+    document.getElementById('reset').addEventListener('click', showMenu);
+    document.getElementById('rules-button').addEventListener('click', () => {
+      const rules = document.getElementById('rules');
+      rules.classList.toggle('show');
+    });
+  </script>
+</body>
+</html>
