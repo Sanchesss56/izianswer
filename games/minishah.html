@@ -1,0 +1,488 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Мини-Шахматы</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+      box-sizing: border-box;
+      min-height: 100vh;
+      background-color: var(--bg_color, #1a1a1a);
+      color: var(--text_color, #fff);
+      overflow-y: auto;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    h1 {
+      margin: 10px 0;
+      font-size: 24px;
+    }
+    #menu, #game, #online-setup {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 360px;
+    }
+    #menu.show, #game.show, #online-setup.show {
+      display: flex;
+    }
+    #status {
+      font-size: 16px;
+      margin: 10px 0;
+      text-align: center;
+    }
+    #game-board {
+      position: relative;
+      display: inline-block;
+      background-color: var(--button_color, #333);
+      padding: 5px;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
+    #game-canvas {
+      display: block;
+      width: 320px;
+      height: 320px;
+      touch-action: none;
+    }
+    .menu-button, #copy-code-button, #reset {
+      margin: 5px;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      background-color: var(--button_color, #4CAF50);
+      color: var(--button_text_color, #fff);
+      border: none;
+      border-radius: 4px;
+      touch-action: manipulation;
+    }
+    .menu-button:hover, #copy-code-button:hover, #reset:hover {
+      filter: brightness(90%);
+    }
+    #online-code, #join-code {
+      margin: 5px;
+      padding: 8px;
+      font-size: 14px;
+      width: 100%;
+      max-width: 200px;
+      border: 1px solid var(--button_color, #333);
+      border-radius: 4px;
+      background-color: var(--bg_color, #fff);
+      color: var(--text_color, #333);
+    }
+    #code-container {
+      display: none;
+      margin: 10px;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+    #code-container.show {
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+  <div id="menu" class="show">
+    <h1>Мини-Шахматы</h1>
+    <button class="menu-button" onclick="startSinglePlayer()">Одиночная игра</button>
+    <button class="menu-button" onclick="showOnlineSetup()">Мультиплеер</button>
+  </div>
+  <div id="online-setup">
+    <h1>Мультиплеер</h1>
+    <button class="menu-button" onclick="createOnlineGame()">Создать игру</button>
+    <div>
+      <input id="join-code" type="text" placeholder="Введи код">
+      <button class="menu-button" onclick="joinOnlineGame()">Присоединиться</button>
+    </div>
+    <button class="menu-button" onclick="showMenu()">Назад</button>
+  </div>
+  <div id="game">
+    <h1>Мини-Шахматы</h1>
+    <div id="status">Твой ход!</div>
+    <div id="code-container">
+      <input id="online-code" type="text" readonly placeholder="Код появится здесь">
+      <button id="copy-code-button" onclick="copyCode()">Копировать код</button>
+    </div>
+    <div id="game-board">
+      <canvas id="game-canvas" width="320" height="320"></canvas>
+    </div>
+    <button id="reset">Вернуться в меню</button>
+  </div>
+
+  <script>
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.expand();
+      const theme = window.Telegram.WebApp.themeParams;
+      document.documentElement.style.setProperty('--bg_color', theme.bg_color || '#1a1a1a');
+      document.documentElement.style.setProperty('--text_color', theme.text_color || '#fff');
+      document.documentElement.style.setProperty('--button_color', theme.button_color || '#4CAF50');
+      document.documentElement.style.setProperty('--button_text_color', theme.button_text_color || '#fff');
+    }
+
+    const SIZE = 4;
+    const CELL_SIZE = 80;
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+    let gameActive = false;
+    let gameMode = null; // 'single', 'online'
+    let isHost = false;
+    let peer = null;
+    let conn = null;
+
+    let board = Array(SIZE).fill().map(() => Array(SIZE).fill(null));
+    let turn = 0; // 0: Player 1 (red), 1: Player 2 (blue)
+    let selectedPiece = null;
+
+    function initBoard() {
+      board = Array(SIZE).fill().map(() => Array(SIZE).fill(null));
+      for (let i = 0; i < SIZE; i++) {
+        board[0][i] = { player: 0, id: i }; // Player 1 (red)
+        board[SIZE - 1][i] = { player: 1, id: i }; // Player 2 (blue)
+      }
+    }
+
+    function showMenu() {
+      document.getElementById('menu').classList.add('show');
+      document.getElementById('game').classList.remove('show');
+      document.getElementById('online-setup').classList.remove('show');
+      document.getElementById('code-container').classList.remove('show');
+      if (peer) {
+        peer.destroy();
+        peer = null;
+        conn = null;
+      }
+      gameActive = false;
+    }
+
+    function startSinglePlayer() {
+      gameMode = 'single';
+      resetGame();
+      document.getElementById('menu').classList.remove('show');
+      document.getElementById('game').classList.add('show');
+      document.getElementById('status').textContent = 'Твой ход! Ты — красный';
+      startGame();
+    }
+
+    function showOnlineSetup() {
+      document.getElementById('menu').classList.remove('show');
+      document.getElementById('online-setup').classList.add('show');
+    }
+
+    function createOnlineGame() {
+      gameMode = 'online';
+      isHost = true;
+      peer = new Peer();
+      peer.on('open', (id) => {
+        document.getElementById('online-code').value = id;
+        document.getElementById('status').textContent = 'Ожидание второго игрока...';
+        document.getElementById('game').classList.add('show');
+        document.getElementById('online-setup').classList.remove('show');
+        document.getElementById('code-container').classList.add('show');
+      });
+      peer.on('connection', (connection) => {
+        conn = connection;
+        resetGame();
+        document.getElementById('code-container').classList.remove('show');
+        conn.on('data', handleNetworkData);
+        conn.on('open', () => {
+          conn.send({ type: 'init', board, turn });
+        });
+        conn.on('close', () => {
+          document.getElementById('status').textContent = 'Игрок отключился.';
+          gameActive = false;
+        });
+        document.getElementById('status').textContent = 'Твой ход! Ты — красный';
+        startGame();
+      });
+    }
+
+    function joinOnlineGame() {
+      const code = document.getElementById('join-code').value.trim();
+      if (!code) {
+        document.getElementById('status').textContent = 'Введи код!';
+        return;
+      }
+      gameMode = 'online';
+      isHost = false;
+      peer = new Peer();
+      peer.on('open', () => {
+        conn = peer.connect(code);
+        conn.on('open', () => {
+          document.getElementById('online-setup').classList.remove('show');
+          document.getElementById('game').classList.add('show');
+          document.getElementById('status').textContent = 'Ход красного! Ты — синий';
+          conn.on('data', handleNetworkData);
+          conn.on('close', () => {
+            document.getElementById('status').textContent = 'Хост отключился.';
+            gameActive = false;
+          });
+        });
+      });
+    }
+
+    function copyCode() {
+      const code = document.getElementById('online-code');
+      navigator.clipboard.writeText(code.value).then(() => {
+        document.getElementById('status').textContent = 'Код скопирован!';
+      }).catch(() => {
+        document.getElementById('status').textContent = 'Не удалось скопировать.';
+      });
+    }
+
+    function handleNetworkData(data) {
+      console.log('Network data:', data);
+      if (data.type === 'init') {
+        board = data.board;
+        turn = data.turn;
+      } else if (data.type === 'move') {
+        board[data.from[0]][data.from[1]] = null;
+        board[data.to[0]][data.to[1]] = { player: data.player, id: data.id };
+        turn = 1 - turn;
+        checkGameOver();
+      } else if (data.type === 'gameOver') {
+        gameActive = false;
+        document.getElementById('status').textContent = data.message;
+      }
+      updateStatus();
+    }
+
+    function resetGame() {
+      initBoard();
+      turn = 0;
+      selectedPiece = null;
+      gameActive = false;
+    }
+
+    function startGame() {
+      gameActive = true;
+      updateStatus();
+      drawGame();
+    }
+
+    function updateStatus() {
+      if (!gameActive) return;
+      if (gameMode === 'single') {
+        document.getElementById('status').textContent = turn === 0 ? 'Твой ход! Ты — красный' : 'Ход ИИ...';
+        if (turn === 1) {
+          setTimeout(aiMove, 500);
+        }
+      } else if (gameMode === 'online') {
+        if (isHost && turn === 0 || !isHost && turn === 1) {
+          document.getElementById('status').textContent = 'Твой ход!';
+        } else {
+          document.getElementById('status').textContent = 'Ход противника...';
+        }
+      }
+    }
+
+    function getValidMoves(x, y, player) {
+      const moves = [];
+      const direction = player === 0 ? 1 : -1; // P1: down, P2: up
+      if (x + direction >= 0 && x + direction < SIZE && !board[x + direction][y]) {
+        moves.push([x + direction, y]);
+      }
+      if (x + direction >= 0 && x + direction < SIZE && y - 1 >= 0 && board[x + direction][y - 1]?.player !== player) {
+        moves.push([x + direction, y - 1]);
+      }
+      if (x + direction >= 0 && x + direction < SIZE && y + 1 < SIZE && board[x + direction][y + 1]?.player !== player) {
+        moves.push([x + direction, y + 1]);
+      }
+      return moves;
+    }
+
+    function checkGameOver() {
+      let p1Alive = false;
+      let p2Alive = false;
+      let p1ReachedEnd = false;
+      let p2ReachedEnd = false;
+
+      for (let i = 0; i < SIZE; i++) {
+        for (let j = 0; j < SIZE; j++) {
+          if (board[i][j]?.player === 0) {
+            p1Alive = true;
+            if (i === SIZE - 1) p1ReachedEnd = true;
+          }
+          if (board[i][j]?.player === 1) {
+            p2Alive = true;
+            if (i === 0) p2ReachedEnd = true;
+          }
+        }
+      }
+
+      if (p1ReachedEnd || !p2Alive) {
+        gameActive = false;
+        document.getElementById('status').textContent = 'Красный победил!';
+        if (gameMode === 'online' && conn) {
+          conn.send({ type: 'gameOver', message: 'Красный победил!' });
+        }
+      } else if (p2ReachedEnd || !p1Alive) {
+        gameActive = false;
+        document.getElementById('status').textContent = 'Синий победил!';
+        if (gameMode === 'online' && conn) {
+          conn.send({ type: 'gameOver', message: 'Синий победил!' });
+        }
+      }
+    }
+
+    function aiMove() {
+      if (!gameActive || turn !== 1) return;
+      const pieces = [];
+      for (let i = 0; i < SIZE; i++) {
+        for (let j = 0; j < SIZE; j++) {
+          if (board[i][j]?.player === 1) {
+            pieces.push([i, j]);
+          }
+        }
+      }
+      if (pieces.length === 0) return;
+      const [x, y] = pieces[Math.floor(Math.random() * pieces.length)];
+      const moves = getValidMoves(x, y, 1);
+      if (moves.length === 0) return;
+      const [toX, toY] = moves[Math.floor(Math.random() * moves.length)];
+      board[toX][toY] = board[x][y];
+      board[x][y] = null;
+      turn = 0;
+      checkGameOver();
+      updateStatus();
+      drawGame();
+    }
+
+    function drawGame() {
+      ctx.fillStyle = '#333';
+      ctx.fillRect(0, 0, SIZE * CELL_SIZE, SIZE * CELL_SIZE);
+
+      // Draw grid
+      for (let i = 0; i < SIZE; i++) {
+        for (let j = 0; j < SIZE; j++) {
+          ctx.fillStyle = (i + j) % 2 === 0 ? '#fff' : '#ccc';
+          ctx.fillRect(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+      }
+
+      // Draw valid moves
+      if (selectedPiece) {
+        const moves = getValidMoves(selectedPiece[0], selectedPiece[1], turn);
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+        moves.forEach(([x, y]) => {
+          ctx.fillRect(y * CELL_SIZE, x * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        });
+      }
+
+      // Draw pieces
+      for (let i = 0; i < SIZE; i++) {
+        for (let j = 0; j < SIZE; j++) {
+          if (board[i][j]) {
+            ctx.fillStyle = board[i][j].player === 0 ? '#e63946' : '#1d4ed8';
+            ctx.beginPath();
+            ctx.arc(j * CELL_SIZE + CELL_SIZE / 2, i * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE / 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+
+    function handleCanvasClick(event) {
+      if (!gameActive) return;
+      if (gameMode === 'online' && isHost && turn !== 0 || !isHost && turn !== 1) return;
+      if (gameMode === 'single' && turn !== 0) return;
+
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (event.clientX || event.touches[0].clientX) - rect.left;
+      const y = (event.clientY || event.touches[0].clientY) - rect.top;
+      const col = Math.floor((x * scaleX) / CELL_SIZE);
+      const row = Math.floor((y * scaleY) / CELL_SIZE);
+
+      console.log('Move attempt:', { row, col, turn });
+
+      if (row < 0 || row >= SIZE || col < 0 || col >= SIZE) return;
+
+      const player = gameMode === 'online' && !isHost ? 1 : 0;
+      if (!selectedPiece) {
+        if (board[row][col]?.player === player) {
+          selectedPiece = [row, col];
+          drawGame();
+        }
+      } else {
+        const moves = getValidMoves(selectedPiece[0], selectedPiece[1], player);
+        const move = moves.find(([x, y]) => x === row && y === col);
+        if (move) {
+          const [fromX, fromY] = selectedPiece;
+          const piece = board[fromX][fromY];
+          board[row][col] = piece;
+          board[fromX][fromY] = null;
+          turn = 1 - turn;
+          selectedPiece = null;
+          if (gameMode === 'online' && conn) {
+            conn.send({ type: 'move', from: [fromX, fromY], to: [row, col], player, id: piece.id });
+          }
+          checkGameOver();
+          updateStatus();
+          drawGame();
+        } else if (board[row][col]?.player === player) {
+          selectedPiece = [row, col];
+          drawGame();
+        } else {
+          selectedPiece = null;
+          drawGame();
+        }
+      }
+    }
+
+    canvas.addEventListener('click', handleCanvasClick);
+    canvas.addEventListener('touchstart', handleCanvasClick);
+    document.getElementById('reset').addEventListener('click', showMenu);
+  </script>
+</body>
+</html>
