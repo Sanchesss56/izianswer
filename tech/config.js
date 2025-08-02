@@ -1,3 +1,1 @@
-const config = {
-  serverUrl: "https://abc12345.ngrok.io/event"  // <-- сюда меняешь при каждом новом запуске
-};
+var serverUrl = "https://abc1234.ngrok.io/event";
