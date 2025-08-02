@@ -1,1 +1,3 @@
-var serverUrl = "https://abc1234.ngrok.io/event";
+{
+  "serverUrl": "https://abc12345.ngrok.io/event"
+}
